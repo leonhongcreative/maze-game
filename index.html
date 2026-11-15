@@ -452,7 +452,9 @@ const glassUniforms = {
   uWashAmt: { value: 0.05 },
   uFres: { value: new THREE.Vector3(0.72, 0.88, 1.0) },
   uRim: { value: new THREE.Vector3(0.80, 0.93, 1.0) },
-  uRimCore: { value: new THREE.Vector3(1.0, 0.99, 0.98) }
+  uRimCore: { value: new THREE.Vector3(1.0, 0.99, 0.98) },
+  uHolePos: { value: new THREE.Vector2(0, 0) },
+  uHoleR: { value: 0.45 }
 };
 const glassMat = new THREE.ShaderMaterial({
   uniforms: glassUniforms,
@@ -487,6 +489,8 @@ const glassMat = new THREE.ShaderMaterial({
     uniform vec3 uFres;
     uniform vec3 uRim;
     uniform vec3 uRimCore;
+    uniform vec2 uHolePos;
+    uniform float uHoleR;
     varying vec3 vWorldPos;
     varying vec3 vWorldNormal;
     varying vec3 vLocalPos;
@@ -506,6 +510,16 @@ const glassMat = new THREE.ShaderMaterial({
       vec3 rd = normalize(I + (bx * lp.x + bz * lp.y) * 0.07);
       vec3 bent = refract(rd, N, 0.90);
       if (dot(bent, bent) > 0.001) rd = normalize(bent);
+
+      // Cheap gravitational lensing around the spawn black hole (UV/ray warp only).
+      vec2 hdelta = vLocalPos.xz - uHolePos;
+      float hdist = length(hdelta);
+      float ht = hdist / max(uHoleR, 1e-4);
+      if (ht < 1.0) {
+        float warp = 0.42 * ht * (1.0 - ht) * (1.0 - ht);
+        vec2 hdir = hdelta / max(hdist, 1e-5);
+        rd = normalize(rd + (bx * hdir.x + bz * hdir.y) * warp);
+      }
 
       float ax = 1.0 - abs(lp.x);
       float az = 1.0 - abs(lp.y);
@@ -565,7 +579,87 @@ const ballMat  = new THREE.MeshPhysicalMaterial({
   clearcoatRoughness: 0.12,
   reflectivity: 1
 });
-const startMat = new THREE.MeshStandardMaterial({ color: 0x3d8f5a, emissive: 0x145c32, emissiveIntensity: 0.55, roughness: 0.45, metalness: 0.1 });
+/* BLACKHOLE_V1 — spawn visual (no physics) */
+const HOLE_R = 0.216; // CELL * 0.30, fits inside a start cell
+const holeHorizonMat = new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
+const holeUniforms = {
+  uTime: { value: 0 },
+  uRadius: { value: HOLE_R },
+  uTint: { value: new THREE.Vector3(1.0, 0.92, 0.78) }
+};
+const holeDiskMat = new THREE.ShaderMaterial({
+  uniforms: holeUniforms,
+  transparent: true,
+  depthWrite: false,
+  depthTest: true,
+  toneMapped: false,
+  side: THREE.DoubleSide,
+  fog: false,
+  vertexShader: `
+    varying vec2 vP;
+    void main() {
+      vP = position.xy;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform float uTime;
+    uniform float uRadius;
+    uniform vec3 uTint;
+    varying vec2 vP;
+    void main() {
+      float r = length(vP);
+      float rn = r / max(uRadius, 1e-4);
+      if (rn > 1.0) discard;
+      float ang = atan(vP.y, vP.x);
+
+      // Approaching side stays fixed in space while the spiral flows through it.
+      float doppler = 0.52 + 0.48 * cos(ang);
+
+      float rh = 0.30;
+      float rRing = 0.368;
+      float rDisk0 = 0.40;
+
+      float logSp = ang * 3.0 + 2.05 / max(rn, 0.14) - uTime * 1.65;
+      float arms = pow(0.5 + 0.5 * sin(logSp), 2.35);
+      float arms2 = pow(0.5 + 0.5 * sin(logSp + 2.2), 3.2);
+      float flow = 0.5 + 0.5 * sin(ang * 2.0 - rn * 12.0 - uTime * 2.25);
+
+      vec3 cHot  = vec3(1.20, 0.96, 0.70);
+      vec3 cMid  = vec3(1.00, 0.36, 0.07);
+      vec3 cCool = vec3(0.50, 0.10, 0.66);
+      vec3 cOut  = vec3(0.15, 0.05, 0.30);
+      vec3 diskCol = mix(cHot, cMid, smoothstep(rDisk0, 0.62, rn));
+      diskCol = mix(diskCol, cCool, smoothstep(0.54, 0.86, rn));
+      diskCol = mix(diskCol, cOut,  smoothstep(0.80, 1.0, rn));
+      diskCol *= uTint;
+      diskCol *= (0.16 + 1.25 * arms + 0.55 * arms2) * (0.72 + 0.40 * flow) * (0.52 + 0.80 * doppler);
+
+      float diskMask = smoothstep(rDisk0 - 0.03, rDisk0 + 0.05, rn) * (1.0 - smoothstep(0.88, 1.0, rn));
+
+      float thick = 0.022 * (0.85 + 0.70 * doppler);
+      float photon = smoothstep(thick, thick * 0.10, abs(rn - rRing));
+      vec3 ringCol = mix(vec3(1.30, 1.08, 0.82), vec3(0.88, 0.75, 1.20), 0.18 + 0.25 * (1.0 - doppler));
+      ringCol *= 1.15 + 0.90 * doppler;
+
+      float horizon = 1.0 - smoothstep(rh - 0.016, rh + 0.010, rn);
+      float glow = (1.0 - smoothstep(0.50, 1.0, rn)) * 0.24 * (0.7 + 0.5 * doppler);
+      vec3 glowCol = mix(cMid, cCool, 0.45) * uTint;
+
+      vec3 col = glowCol * glow;
+      col = mix(col, diskCol, diskMask);
+      col = mix(col, ringCol, photon);
+      col = mix(col, vec3(0.0), horizon);
+
+      float alpha = max(diskMask * 0.94, photon);
+      alpha = max(alpha, glow * 0.70);
+      alpha = max(alpha, horizon);
+      alpha *= 1.0 - smoothstep(0.94, 1.0, rn);
+      gl_FragColor = vec4(col, alpha);
+    }
+  `
+});
 const exitMat  = new THREE.MeshStandardMaterial({ color: 0xe8b14a, emissive: 0xc47a16, emissiveIntensity: 0.85, roughness: 0.35, metalness: 0.35 });
 const exitRingMat = new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb040, emissiveIntensity: 0.7, roughness: 0.4, metalness: 0.4 });
 
@@ -792,6 +886,8 @@ let currentThemeId = 'wood';
 let wallInst = null;
 let themeExitLight = null;
 let themeExitRing = null;
+let holeLight = null;
+const spawn = { active: false, t: 0, dur: 0.85 };
 
 function getTheme() { return THEMES[currentThemeId] || THEMES.wood; }
 
@@ -827,9 +923,20 @@ function applyTheme(id, persist = true) {
   ballMat.envMapIntensity = B.env;
   ballMat.needsUpdate = true;
 
-  startMat.color.setHex(t.start.color);
-  startMat.emissive.setHex(t.start.emissive);
-  startMat.emissiveIntensity = t.start.emI;
+  const HOLE_TINTS = {
+    wood: [1.0, 0.92, 0.78],
+    marble: [0.96, 0.95, 1.02],
+    titanium: [0.82, 0.90, 1.06],
+    glass: [0.80, 0.94, 1.08],
+    pearl: [1.08, 0.88, 0.96],
+    jade: [0.95, 1.04, 0.82]
+  };
+  const ht = HOLE_TINTS[id] || HOLE_TINTS.wood;
+  holeUniforms.uTint.value.set(ht[0], ht[1], ht[2]);
+  if (holeLight) {
+    const lc = new THREE.Color(ht[0], ht[1] * 0.55, ht[2] * 0.35);
+    holeLight.color.copy(lc);
+  }
   exitMat.color.setHex(t.exit.color);
   exitMat.emissive.setHex(t.exit.emissive);
   exitMat.emissiveIntensity = t.exit.emI;
@@ -1546,10 +1653,26 @@ function buildLevel(lv) {
   startPos.copy(cellCenter(0, 0));
   exitPos.copy(cellCenter(cols - 1, rows - 1));
 
-  const startPad = new THREE.Mesh(new THREE.CylinderGeometry(CELL * 0.28, CELL * 0.28, 0.016, 24), startMat);
-  startPad.position.set(startPos.x, 0.009, startPos.z);
-  startPad.receiveShadow = true;
-  mazeRoot.add(startPad);
+  glassUniforms.uHolePos.value.set(startPos.x, startPos.z);
+  glassUniforms.uHoleR.value = HOLE_R * 2.05;
+
+  const holeHorizon = new THREE.Mesh(new THREE.CircleGeometry(HOLE_R * 0.31, 32), holeHorizonMat);
+  holeHorizon.rotation.x = -Math.PI / 2;
+  holeHorizon.position.set(startPos.x, 0.008, startPos.z);
+  holeHorizon.renderOrder = 1;
+  holeHorizon.name = 'blackHoleHorizon';
+  mazeRoot.add(holeHorizon);
+
+  const holeDisk = new THREE.Mesh(new THREE.CircleGeometry(HOLE_R, 80), holeDiskMat);
+  holeDisk.rotation.x = -Math.PI / 2;
+  holeDisk.position.set(startPos.x, 0.016, startPos.z);
+  holeDisk.renderOrder = 1;
+  holeDisk.name = 'blackHoleDisk';
+  mazeRoot.add(holeDisk);
+
+  holeLight = new THREE.PointLight(0xff8a40, 0.38, 1.25, 2);
+  holeLight.position.set(startPos.x, 0.14, startPos.z);
+  mazeRoot.add(holeLight);
 
   const exitPad = new THREE.Mesh(new THREE.CylinderGeometry(CELL * 0.30, CELL * 0.30, 0.02, 24), exitMat);
   exitPad.position.set(exitPos.x, 0.01, exitPos.z);
@@ -1570,6 +1693,7 @@ function buildLevel(lv) {
     ball = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 32, 24), ballMat);
     ball.castShadow = true;
     ball.name = 'ball';
+    ball.renderOrder = 3;
     board.add(ball);
   }
   if (!contactShadow) {
@@ -1677,14 +1801,74 @@ function fitCamera() {
   camera.updateProjectionMatrix();
 }
 
-function resetBall() {
-  if (ball && ball.parent !== board) board.add(ball);
+function finishSpawn() {
+  // End the emerge cinematic only. Do not teleport or zero velocity, so
+  // tests / placeAtGap can move the ball while a spawn was still running.
+  spawn.active = false;
+  spawn.t = spawn.dur;
+  if (!ball) return;
   ball.scale.setScalar(1);
+  ball.rotation.set(0, 0, 0);
   ball.visible = true;
-  pos.copy(startPos);
   pos.y = RADIUS;
+  ball.position.x = pos.x;
+  ball.position.y = pos.y;
+  ball.position.z = pos.z;
+  if (contactShadow) {
+    contactShadow.scale.setScalar(1);
+    contactShadow.position.set(pos.x, 0.003, pos.z);
+    const dHole = Math.hypot(pos.x - startPos.x, pos.z - startPos.z);
+    const fade = Math.min(1, Math.max(0, (dHole - 0.06) / 0.18));
+    contactShadow.material.opacity = 0.45 * fade;
+    contactShadow.visible = fade > 0.03;
+  }
+}
+
+function startSpawn() {
+  spawn.active = true;
+  spawn.t = 0;
+  if (!ball) return;
+  if (ball.parent !== board) board.add(ball);
+  ball.visible = true;
+  ball.scale.setScalar(0.001);
+  ball.quaternion.identity();
+  pos.copy(startPos);
+  pos.y = RADIUS * 0.12;
   vel.set(0, 0, 0);
   ball.position.copy(pos);
+  if (contactShadow) {
+    contactShadow.visible = false;
+    contactShadow.material.opacity = 0;
+    contactShadow.scale.setScalar(0.001);
+  }
+}
+
+function updateSpawn(dt) {
+  if (!spawn.active) return;
+  spawn.t += dt;
+  const u = Math.min(1, spawn.t / spawn.dur);
+  const ease = 1 - Math.pow(1 - u, 3);
+  const swirl = (1 - ease) * Math.PI * 2.4;
+  ball.scale.setScalar(Math.max(0.001, ease));
+  ball.rotation.y = swirl;
+  pos.copy(startPos);
+  pos.y = RADIUS * (0.12 + 0.88 * ease);
+  ball.position.copy(pos);
+  if (contactShadow) {
+    const op = Math.max(0, (u - 0.4) / 0.6) * 0.45;
+    contactShadow.visible = op > 0.02;
+    contactShadow.material.opacity = op;
+    contactShadow.scale.setScalar(Math.max(0.001, ease));
+    contactShadow.position.set(pos.x, 0.003, pos.z);
+  }
+  if (u >= 1) finishSpawn();
+}
+
+function resetBall(animate = false) {
+  if (ball && ball.parent !== board) board.add(ball);
+  ball.visible = true;
+  pos.copy(startPos);
+  vel.set(0, 0, 0);
   ball.quaternion.identity();
   tilt.x = tilt.z = tilt.tx = tilt.tz = 0;
   tilt.hold = false;
@@ -1693,10 +1877,8 @@ function resetBall() {
   falling = false;
   fall.active = false;
   fall.t = 0;
-  if (contactShadow) {
-    contactShadow.visible = true;
-    contactShadow.position.set(pos.x, 0.003, pos.z);
-  }
+  if (animate) startSpawn();
+  else finishSpawn();
 }
 
 // ---------- physics ----------
@@ -1843,7 +2025,7 @@ function finishFall() {
   if (lives <= 0) {
     showGameOver();
   } else {
-    resetBall();
+    resetBall(true);
     playing = true;
     startTime = performance.now();
     elapsed = 0;
@@ -2048,7 +2230,7 @@ function hideOverlay() { overlay.classList.add('hidden'); }
 function showOverlay() { overlay.classList.remove('hidden'); }
 
 function startPlay() {
-  resetBall();
+  resetBall(true);
   playing = true;
   won = false;
   gameOver = false;
@@ -2138,6 +2320,7 @@ function frame(now) {
 
   spaceMat.uniforms.uTime.value = now * 0.001;
   glassUniforms.uTime.value = spaceMat.uniforms.uTime.value;
+  holeUniforms.uTime.value = spaceMat.uniforms.uTime.value;
   updateTiltTargets(dt);
   tilt.x = damp(tilt.x, tilt.tx, 11, dt);
   tilt.z = damp(tilt.z, tilt.tz, 11, dt);
@@ -2152,6 +2335,9 @@ function frame(now) {
   frameCount++;
   if (fall.active) {
     updateFall(dt);
+  } else if (spawn.active) {
+    updateSpawn(dt);
+    updateRollSound(0);
   } else if (playing && !won) {
     let acc = dt;
     while (acc > 0) {
@@ -2160,10 +2346,16 @@ function frame(now) {
       physSteps++;
       acc -= s;
     }
-    if (!fall.active) {
+    if (!fall.active && !spawn.active) {
       pos.y = RADIUS;
       ball.position.copy(pos);
-      if (contactShadow) contactShadow.position.set(pos.x, 0.003, pos.z);
+      if (contactShadow) {
+        contactShadow.position.set(pos.x, 0.003, pos.z);
+        const dHole = Math.hypot(pos.x - startPos.x, pos.z - startPos.z);
+        const fade = Math.min(1, Math.max(0, (dHole - 0.06) / 0.18));
+        contactShadow.material.opacity = 0.45 * fade;
+        contactShadow.visible = fade > 0.03;
+      }
       elapsed = (now - startTime) / 1000;
       timeLabel.textContent = elapsed.toFixed(1) + ' 秒';
       updateRollSound(Math.hypot(vel.x, vel.z));
@@ -2206,11 +2398,24 @@ window.__maze = {
       gaps: gaps.map((g) => ({ side: g.side, min: g.min, max: g.max })),
       gapWidth: gapWidthFor(level),
       theme: currentThemeId,
-      music: audio.musicId
+      music: audio.musicId,
+      spawning: spawn.active,
+      spawnT: spawn.t
     };
   },
   startPlay,
   buildLevel,
+  setSpawnT(u) {
+    startSpawn();
+    spawn.t = Math.max(0, Math.min(1, u)) * spawn.dur;
+    updateSpawn(0);
+  },
+  lookAtStart(dist = 1.15) {
+    camera.position.set(startPos.x + dist * 0.12, dist * 0.72, startPos.z + dist * 0.62);
+    camera.lookAt(startPos.x, 0.02, startPos.z);
+    camera.updateProjectionMatrix();
+  },
+  fitCamera,
   setTheme: (id) => applyTheme(id),
   getTheme: () => currentThemeId,
   listThemes: () => THEME_ORDER.slice(),
@@ -2220,6 +2425,7 @@ window.__maze = {
   press(dir, down = true) { tilt.hold = false; if (keys[dir] !== undefined) keys[dir] = down; },
   placeAtGap() {
     if (!gaps.length) return null;
+    if (spawn.active) finishSpawn();
     const g = gaps[0];
     const { hw, hd } = boardExtent();
     const mid = (g.min + g.max) * 0.5;
@@ -2279,6 +2485,7 @@ window.__maze = {
       glassUniforms.uBoardX.value.copy(tmpAxis);
       tmpAxis.set(0, 0, 1).applyQuaternion(board.quaternion);
       glassUniforms.uBoardZ.value.copy(tmpAxis);
+      if (spawn.active) finishSpawn();
       if (fall.active) {
         updateFall(dt);
       } else if (playing && !won) {
