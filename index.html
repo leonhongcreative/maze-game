@@ -182,28 +182,9 @@ const rim = new THREE.DirectionalLight(0x6a7fb8, 0.28);
 rim.position.set(-3.2, 2.2, -5.5);
 scene.add(rim);
 
-// Blurred deep-space backdrop (procedural shader skybox, no external assets).
-// Sit at the far plane so the tilting box never clips against it.
-const spaceMat = new THREE.ShaderMaterial({
-  side: THREE.BackSide,
-  depthWrite: false,
-  depthTest: false,
-  fog: false,
-  uniforms: { uTime: { value: 0 } },
-  vertexShader: `
-    varying vec3 vDir;
-    void main() {
-      vDir = normalize(position);
-      mat4 viewRot = mat4(mat3(modelViewMatrix));
-      vec4 clip = projectionMatrix * viewRot * vec4(position, 1.0);
-      gl_Position = clip.xyww;
-    }
-  `,
-  fragmentShader: `
-    precision highp float;
-    uniform float uTime;
-    varying vec3 vDir;
-
+// Deep-space backdrop + shared GLSL used by the liquid-glass floor.
+// Sit at the far plane so the tilting board never clips against it.
+const SPACE_GLSL = `
     float hash13(vec3 p) {
       p = fract(p * 0.1031);
       p += dot(p, p.yzx + 33.33);
@@ -259,30 +240,50 @@ const spaceMat = new THREE.ShaderMaterial({
       }
       return acc;
     }
-
-    void main() {
-      vec3 d = normalize(vDir);
-      float t = uTime * 0.008;
+    vec3 spaceColor(vec3 d, float time) {
+      d = normalize(d);
+      float t = time * 0.008;
       vec3 d1 = d;
       d1.xz = rot(t) * d1.xz;
       vec3 d2 = d;
       d2.xy = rot(t * 0.55 + 0.4) * d2.xy;
-
       float n  = fbm(d1 * 2.15);
       float n2 = fbm(d2 * 3.8 + 8.0);
       float n3 = fbm(d1 * 1.05 + n * 0.85);
-
       vec3 col = vec3(0.010, 0.012, 0.028);
       col += vec3(0.16, 0.045, 0.20) * smoothstep(0.42, 0.88, n3) * 0.75;
       col += vec3(0.02, 0.10, 0.16) * smoothstep(0.38, 0.82, n2) * 0.55;
       col += vec3(0.12, 0.035, 0.04) * smoothstep(0.55, 0.92, n) * 0.40;
       col *= 0.50 + 0.50 * smoothstep(0.18, 0.72, n2);
-
       col += softStars(d1, 28.0, 0.42, 0.55);
       col += softStars(d2, 64.0, 0.22, 0.70);
       col += softStars(d1.yzx, 130.0, 0.10, 0.40);
+      return col;
+    }
+`;
 
-      gl_FragColor = vec4(col, 1.0);
+const spaceMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  depthTest: false,
+  fog: false,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize(position);
+      mat4 viewRot = mat4(mat3(modelViewMatrix));
+      vec4 clip = projectionMatrix * viewRot * vec4(position, 1.0);
+      gl_Position = clip.xyww;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform float uTime;
+    varying vec3 vDir;
+    ${SPACE_GLSL}
+    void main() {
+      gl_FragColor = vec4(spaceColor(normalize(vDir), uTime), 1.0);
     }
   `
 });
@@ -346,26 +347,114 @@ function makeWoodTexture({ w = 512, h = 512, c0 = [0x8b, 0x57, 0x2e], c1 = [0x4a
 const wallMap  = makeWoodTexture({ c0: [0x8d, 0x56, 0x2c], c1: [0x3e, 0x22, 0x10], rings: 16, repeatX: 1, repeatY: 1 });
 const wallMat  = new THREE.MeshStandardMaterial({ map: wallMap,  roughness: 0.58, metalness: 0.05, color: 0xffffff });
 
-// Frosted glass floor. Transmission looks best on desktop; on phones a cheaper
-// transparent + clearcoat stand-in keeps the starfield visible without an extra pass.
-const liteGlass = /iPhone|iPad|iPod|Android|Mobile|MicroMessenger/i.test(navigator.userAgent || '');
-const glassMat = new THREE.MeshPhysicalMaterial({
-  color: 0x9eb4c8,
-  metalness: 0.05,
-  roughness: liteGlass ? 0.34 : 0.22,
-  transmission: liteGlass ? 0.0 : 0.94,
-  thickness: 0.22,
-  ior: 1.45,
-  transparent: true,
-  opacity: liteGlass ? 0.38 : 1,
+// Liquid-glass floor: samples the same procedural space as the skybox with
+// a slight refraction/magnification, fresnel rim, and a moving specular.
+// No transmission pass — same look on desktop and iPhone.
+const glassUniforms = {
+  uTime: { value: 0 },
+  uLightDir: { value: new THREE.Vector3(0.4, 1.0, 0.25).normalize() },
+  uHalf: { value: new THREE.Vector2(1, 1) },
+  uBoardX: { value: new THREE.Vector3(1, 0, 0) },
+  uBoardZ: { value: new THREE.Vector3(0, 0, 1) }
+};
+const glassMat = new THREE.ShaderMaterial({
+  uniforms: glassUniforms,
+  transparent: false,
   depthWrite: true,
   side: THREE.DoubleSide,
-  clearcoat: 0.75,
-  clearcoatRoughness: 0.18,
-  envMapIntensity: 1.25,
-  attenuationColor: new THREE.Color(0x6e8aa0),
-  attenuationDistance: 1.2
+  fog: false,
+  vertexShader: `
+    varying vec3 vWorldPos;
+    varying vec3 vWorldNormal;
+    varying vec3 vLocalPos;
+    varying vec3 vLocalNormal;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      vWorldNormal = normalize(mat3(modelMatrix) * normal);
+      vLocalPos = position;
+      vLocalNormal = normal;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform float uTime;
+    uniform vec3 uLightDir;
+    uniform vec2 uHalf;
+    uniform vec3 uBoardX;
+    uniform vec3 uBoardZ;
+    varying vec3 vWorldPos;
+    varying vec3 vWorldNormal;
+    varying vec3 vLocalPos;
+    varying vec3 vLocalNormal;
+    ${SPACE_GLSL}
+
+    void main() {
+      vec3 I = normalize(vWorldPos - cameraPosition);
+      vec3 N = normalize(vWorldNormal);
+      if (dot(N, -I) < 0.0) N = -N;
+
+      vec3 bx = normalize(uBoardX);
+      vec3 bz = normalize(uBoardZ);
+      vec2 lp = vec2(vLocalPos.x / max(uHalf.x, 1e-4), vLocalPos.z / max(uHalf.y, 1e-4));
+
+      // Slight lens magnification + IOR bend so the starfield feels behind glass.
+      vec3 rd = normalize(I + (bx * lp.x + bz * lp.y) * 0.07);
+      vec3 bent = refract(rd, N, 0.90);
+      if (dot(bent, bent) > 0.001) rd = normalize(bent);
+
+      float ax = 1.0 - abs(lp.x);
+      float az = 1.0 - abs(lp.y);
+      float dEdge = min(ax, az);
+      float rim = 1.0 - smoothstep(0.0, 0.030, dEdge);
+      float rimSoft = 1.0 - smoothstep(0.0, 0.080, dEdge);
+      float rimCore = 1.0 - smoothstep(0.0, 0.012, dEdge);
+      float isSide = smoothstep(0.5, 0.8, 1.0 - abs(vLocalNormal.y));
+      rim = max(rim, isSide);
+      rimSoft = max(rimSoft, isSide * 0.7);
+
+      vec3 T1 = normalize(cross(N, bz));
+      if (length(T1) < 0.2) T1 = normalize(cross(N, bx));
+      float fringe = max(rim, pow(1.0 - max(dot(N, -I), 0.0), 2.0));
+
+      vec3 col;
+      if (fringe > 0.18) {
+        float k = 0.016 * fringe;
+        vec3 cR = spaceColor(normalize(rd + T1 * k), uTime);
+        vec3 cG = spaceColor(rd, uTime);
+        vec3 cB = spaceColor(normalize(rd - T1 * k), uTime);
+        col = vec3(cR.r, cG.g, cB.b);
+      } else {
+        col = spaceColor(rd, uTime);
+      }
+
+      // Very faint cool tint — keep the stars clearly readable.
+      col *= vec3(0.97, 0.99, 1.03);
+      col = mix(col, vec3(0.78, 0.90, 1.0), 0.05);
+
+      float nv = max(dot(N, -I), 0.0);
+      float fres = pow(1.0 - nv, 2.8);
+      col += vec3(0.72, 0.88, 1.0) * fres * 0.28;
+
+      // Thin glowing lip along the board border.
+      col += vec3(0.80, 0.93, 1.0) * (rim * 0.70 + rimSoft * 0.10);
+      col += vec3(1.0, 0.99, 0.98) * rimCore * 0.65;
+      col += vec3(0.85, 0.95, 1.0) * isSide * 0.45;
+
+      // Specular highlight that slides as the board tilts.
+      vec3 L = normalize(uLightDir);
+      vec3 V = -I;
+      vec3 H = normalize(L + V);
+      float nh = max(dot(N, H), 0.0);
+      col += vec3(1.0, 0.99, 0.97) * pow(nh, 110.0) * 0.95;
+      col += vec3(0.78, 0.90, 1.0) * pow(nh, 14.0) * 0.16;
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
 });
+
 const ballMat  = new THREE.MeshPhysicalMaterial({
   color: 0xd8dee6,
   metalness: 1,
@@ -531,9 +620,9 @@ function buildLevel(lv) {
   const floor = new THREE.Mesh(new THREE.BoxGeometry(boardW, FLOOR_T, boardD), glassMat);
   floor.name = 'glassFloor';
   floor.position.y = -FLOOR_T * 0.5;
-  floor.receiveShadow = true;
   floor.renderOrder = 0;
   mazeRoot.add(floor);
+  glassUniforms.uHalf.value.set(boardW * 0.5, boardD * 0.5);
 
   planGaps(ox, oz, hw, hd);
 
@@ -635,7 +724,7 @@ function buildLevel(lv) {
   }
   if (!contactShadow) {
     const cMat = new THREE.MeshBasicMaterial({
-      color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false
+      color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false
     });
     contactShadow = new THREE.Mesh(new THREE.CircleGeometry(RADIUS * 1.7, 24), cMat);
     contactShadow.rotation.x = -Math.PI / 2;
@@ -1187,11 +1276,17 @@ function frame(now) {
   last = now;
 
   spaceMat.uniforms.uTime.value = now * 0.001;
+  glassUniforms.uTime.value = spaceMat.uniforms.uTime.value;
   updateTiltTargets(dt);
   tilt.x = damp(tilt.x, tilt.tx, 11, dt);
   tilt.z = damp(tilt.z, tilt.tz, 11, dt);
   board.rotation.x = tilt.x;
   board.rotation.z = tilt.z;
+  glassUniforms.uLightDir.value.copy(key.position).normalize();
+  tmpAxis.set(1, 0, 0).applyQuaternion(board.quaternion);
+  glassUniforms.uBoardX.value.copy(tmpAxis);
+  tmpAxis.set(0, 0, 1).applyQuaternion(board.quaternion);
+  glassUniforms.uBoardZ.value.copy(tmpAxis);
 
   frameCount++;
   if (fall.active) {
@@ -1308,6 +1403,11 @@ window.__maze = {
       tilt.z = damp(tilt.z, tilt.tz, 11, dt);
       board.rotation.x = tilt.x;
       board.rotation.z = tilt.z;
+      glassUniforms.uLightDir.value.copy(key.position).normalize();
+      tmpAxis.set(1, 0, 0).applyQuaternion(board.quaternion);
+      glassUniforms.uBoardX.value.copy(tmpAxis);
+      tmpAxis.set(0, 0, 1).applyQuaternion(board.quaternion);
+      glassUniforms.uBoardZ.value.copy(tmpAxis);
       if (fall.active) {
         updateFall(dt);
       } else if (playing && !won) {
