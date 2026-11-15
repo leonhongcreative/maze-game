@@ -9,6 +9,16 @@
 <title>木盒迷宫</title>
 <link rel="icon" href="data:,">
 <style>
+  :root {
+    --accent: #e8b060;
+    --accent2: #c4842e;
+    --accent-ink: #2a1608;
+    --accent-shadow: #8a5a18;
+    --card-top: rgba(72,42,24,.92);
+    --card-bot: rgba(36,22,12,.94);
+    --text: #f6eadc;
+    --sheet-bg: rgba(22,16,14,.94);
+  }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     background: #05040c;
@@ -27,7 +37,7 @@
     position: fixed; left: 0; right: 0; top: 0;
     display: flex; justify-content: space-between; align-items: flex-start;
     padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 0;
-    color: #f6eadc; pointer-events: none; z-index: 5;
+    color: var(--text, #f6eadc); pointer-events: none; z-index: 5;
     text-shadow: 0 1px 8px rgba(0,0,0,.55);
   }
   #hud .title { font-weight: 650; font-size: 15px; letter-spacing: .06em; }
@@ -40,7 +50,7 @@
   #calibrate {
     position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     z-index: 5; pointer-events: auto;
-    background: rgba(40,24,14,.55); color: #f6eadc;
+    background: var(--sheet-bg, rgba(40,24,14,.55)); color: var(--text, #f6eadc);
     border: 1px solid rgba(246,234,220,.28); border-radius: 18px;
     padding: 8px 14px; font-size: 13px; cursor: pointer;
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -50,7 +60,7 @@
     position: fixed; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     text-align: center; color: rgba(246,234,220,.82); font-size: 13px;
     text-shadow: 0 1px 6px rgba(0,0,0,.65); pointer-events: none; z-index: 5;
-    padding: 0 108px 0 16px; transition: opacity .6s;
+    padding: 0 108px; transition: opacity .6s;
   }
   #overlay {
     position: fixed; inset: 0; z-index: 10;
@@ -62,11 +72,11 @@
   #overlay.hidden { display: none; }
   .card {
     width: min(92vw, 380px);
-    background: linear-gradient(180deg, rgba(72,42,24,.92), rgba(36,22,12,.94));
+    background: linear-gradient(180deg, var(--card-top), var(--card-bot));
     border: 1px solid rgba(246,234,220,.22);
     border-radius: 20px;
-    padding: 28px 24px 22px;
-    color: #f6eadc;
+    padding: 22px 20px 18px;
+    color: var(--text, #f6eadc);
     text-align: center;
     box-shadow: 0 18px 50px rgba(0,0,0,.45);
   }
@@ -76,19 +86,83 @@
   .btn {
     display: block; width: 100%;
     appearance: none; border: 0; cursor: pointer;
-    background: linear-gradient(180deg, #e8b060, #c4842e);
-    color: #2a1608; font-weight: 700; font-size: 16px;
+    background: linear-gradient(180deg, var(--accent), var(--accent2));
+    color: var(--accent-ink); font-weight: 700; font-size: 16px;
     padding: 13px 16px; border-radius: 14px;
-    box-shadow: 0 4px 0 #8a5a18, 0 8px 20px rgba(0,0,0,.28);
+    box-shadow: 0 4px 0 var(--accent-shadow), 0 8px 20px rgba(0,0,0,.28);
   }
-  .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #8a5a18, 0 4px 12px rgba(0,0,0,.28); }
+  .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--accent-shadow), 0 4px 12px rgba(0,0,0,.28); }
   [hidden] { display: none !important; }
   .btn.ghost {
     margin-top: 10px;
-    background: transparent; color: #f6eadc;
+    background: transparent; color: var(--text, #f6eadc);
     border: 1px solid rgba(246,234,220,.3);
     box-shadow: none; font-weight: 600;
   }
+
+  #themeBtn {
+    position: fixed; left: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 6; pointer-events: auto;
+    background: rgba(16, 14, 20, .82); color: #f4efe8;
+    border: 1px solid rgba(255,255,255,.32); border-radius: 18px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    text-shadow: 0 1px 2px rgba(0,0,0,.45);
+  }
+  #sheetBak {
+    position: fixed; inset: 0; z-index: 20;
+    background: rgba(0,0,0,.4); display: none;
+  }
+  #sheetBak.open { display: block; }
+  #sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+    background: var(--sheet-bg);
+    color: var(--text, #f6eadc);
+    border-radius: 22px 22px 0 0;
+    padding: 10px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -12px 40px rgba(0,0,0,.4);
+    transform: translateY(calc(100% + 72px));
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .28s ease, visibility 0s linear .28s;
+    max-height: 78vh; overflow-y: auto;
+  }
+  #sheet.open {
+    transform: translateY(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform .28s ease, visibility 0s;
+  }
+  #sheet .handle { width: 40px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.28); margin: 4px auto 10px; }
+  #sheet h3 { margin: 4px 0 10px; font-size: 15px; letter-spacing: .08em; font-weight: 650; display: flex; justify-content: space-between; align-items: center; }
+  #sheet h3 button { appearance: none; background: none; border: 0; color: inherit; font-size: 13px; opacity: .7; cursor: pointer; }
+  .swatch-row { display: flex; justify-content: space-between; gap: 6px; margin: 0 0 14px; }
+  .swatch {
+    appearance: none; border: 0; background: none; color: inherit;
+    padding: 0; cursor: pointer; flex: 1; text-align: center;
+  }
+  .swatch .dot {
+    display: block; width: 36px; height: 36px; border-radius: 50%;
+    margin: 0 auto 5px; border: 2px solid rgba(255,255,255,.25);
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  .swatch.on .dot { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0,0,0,.3); }
+  .swatch .sw-lab { display: block; font-size: 11px; opacity: .85; letter-spacing: .04em; }
+  #startExtras { margin: 0 0 14px; }
+  #startExtras .swatch .dot { width: 32px; height: 32px; }
+  .audio-block label, .vol-row span { font-size: 12px; opacity: .8; }
+  .mchip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+  .mchip {
+    appearance: none; cursor: pointer;
+    background: rgba(255,255,255,.08); color: inherit;
+    border: 1px solid rgba(255,255,255,.16); border-radius: 14px;
+    padding: 5px 10px; font-size: 12px;
+  }
+  .mchip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 650; }
+  .vol-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
+  .vol-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .vol-row input[type=checkbox] { accent-color: var(--accent); }
+  #card .sub { margin: 0 0 12px; }
   @media (max-width: 420px) {
     #hud .title { font-size: 13px; }
     #hud .lives { font-size: 13px; }
@@ -111,12 +185,30 @@
     <div class="time" id="timeLabel">0.0 秒</div>
   </div>
 </div>
+<button class="ui" id="themeBtn">主题 / 声音</button>
 <button class="ui" id="calibrate">校准水平</button>
-<div id="hint" class="ui">倾斜木盒，滚向金色出口 · 小心外墙开口</div>
+<div id="hint" class="ui">倾斜木盒，滚向出口 · 小心外墙开口</div>
+<div id="sheetBak"></div>
+<div id="sheet" class="ui" role="dialog" aria-label="主题与声音">
+  <div class="handle"></div>
+  <h3>主题<button type="button" id="sheetClose">完成</button></h3>
+  <div class="swatch-row" id="sheetSwatches"></div>
+  <h3>声音</h3>
+  <div class="audio-block">
+    <label>音乐</label>
+    <div class="mchip-row" id="musicChips"></div>
+    <div class="vol-row"><span>音乐音量</span><input type="range" id="musicVol" min="0" max="1" step="0.01" value="0.45"></div>
+    <div class="vol-row"><span>音效</span><input type="checkbox" id="sfxOn" checked><span id="sfxOnLab">开</span>
+      <span style="margin-left:auto">音量</span><input type="range" id="sfxVol" min="0" max="1" step="0.01" value="0.7"></div>
+  </div>
+</div>
 <div id="overlay" class="ui">
   <div class="card" id="card">
     <h1 id="cardTitle">木盒迷宫</h1>
-    <p class="sub" id="cardSub">倾斜木盒，让金属小球滚向金色出口。外墙有开口，掉下去会坠入星空并失去一条生命。<br>每局 3 次机会。首次需允许访问陀螺仪；桌面可用方向键或拖动屏幕。</p>
+    <p class="sub" id="cardSub">倾斜木盒，让金属小球滚向出口。外墙有开口，掉下去会坠入星空并失去一条生命。每局 3 次机会。<br>可在下方选择主题与背景音乐。</p>
+    <div id="startExtras">
+      <div class="swatch-row" id="startSwatches"></div>
+    </div>
     <div class="stat" id="cardStat" hidden></div>
     <button class="btn" id="startBtn">开始游戏 / 启用陀螺仪</button>
     <button class="btn ghost" id="nextBtn" hidden>下一关（更大迷宫）</button>
@@ -345,7 +437,6 @@ function makeWoodTexture({ w = 512, h = 512, c0 = [0x8b, 0x57, 0x2e], c1 = [0x4a
 }
 
 const wallMap  = makeWoodTexture({ c0: [0x8d, 0x56, 0x2c], c1: [0x3e, 0x22, 0x10], rings: 16, repeatX: 1, repeatY: 1 });
-const wallMat  = new THREE.MeshStandardMaterial({ map: wallMap,  roughness: 0.58, metalness: 0.05, color: 0xffffff });
 
 // Liquid-glass floor: samples the same procedural space as the skybox with
 // a slight refraction/magnification, fresnel rim, and a moving specular.
@@ -355,7 +446,13 @@ const glassUniforms = {
   uLightDir: { value: new THREE.Vector3(0.4, 1.0, 0.25).normalize() },
   uHalf: { value: new THREE.Vector2(1, 1) },
   uBoardX: { value: new THREE.Vector3(1, 0, 0) },
-  uBoardZ: { value: new THREE.Vector3(0, 0, 1) }
+  uBoardZ: { value: new THREE.Vector3(0, 0, 1) },
+  uTint: { value: new THREE.Vector3(0.97, 0.99, 1.03) },
+  uWash: { value: new THREE.Vector3(0.78, 0.90, 1.0) },
+  uWashAmt: { value: 0.05 },
+  uFres: { value: new THREE.Vector3(0.72, 0.88, 1.0) },
+  uRim: { value: new THREE.Vector3(0.80, 0.93, 1.0) },
+  uRimCore: { value: new THREE.Vector3(1.0, 0.99, 0.98) }
 };
 const glassMat = new THREE.ShaderMaterial({
   uniforms: glassUniforms,
@@ -384,6 +481,12 @@ const glassMat = new THREE.ShaderMaterial({
     uniform vec2 uHalf;
     uniform vec3 uBoardX;
     uniform vec3 uBoardZ;
+    uniform vec3 uTint;
+    uniform vec3 uWash;
+    uniform float uWashAmt;
+    uniform vec3 uFres;
+    uniform vec3 uRim;
+    uniform vec3 uRimCore;
     varying vec3 vWorldPos;
     varying vec3 vWorldNormal;
     varying vec3 vLocalPos;
@@ -429,18 +532,16 @@ const glassMat = new THREE.ShaderMaterial({
         col = spaceColor(rd, uTime);
       }
 
-      // Very faint cool tint — keep the stars clearly readable.
-      col *= vec3(0.97, 0.99, 1.03);
-      col = mix(col, vec3(0.78, 0.90, 1.0), 0.05);
+      col *= uTint;
+      col = mix(col, uWash, uWashAmt);
 
       float nv = max(dot(N, -I), 0.0);
       float fres = pow(1.0 - nv, 2.8);
-      col += vec3(0.72, 0.88, 1.0) * fres * 0.28;
+      col += uFres * fres * 0.28;
 
-      // Thin glowing lip along the board border.
-      col += vec3(0.80, 0.93, 1.0) * (rim * 0.70 + rimSoft * 0.10);
-      col += vec3(1.0, 0.99, 0.98) * rimCore * 0.65;
-      col += vec3(0.85, 0.95, 1.0) * isSide * 0.45;
+      col += uRim * (rim * 0.70 + rimSoft * 0.10);
+      col += uRimCore * rimCore * 0.65;
+      col += uRim * isSide * 0.45;
 
       // Specular highlight that slides as the board tilts.
       vec3 L = normalize(uLightDir);
@@ -466,6 +567,755 @@ const ballMat  = new THREE.MeshPhysicalMaterial({
 });
 const startMat = new THREE.MeshStandardMaterial({ color: 0x3d8f5a, emissive: 0x145c32, emissiveIntensity: 0.55, roughness: 0.45, metalness: 0.1 });
 const exitMat  = new THREE.MeshStandardMaterial({ color: 0xe8b14a, emissive: 0xc47a16, emissiveIntensity: 0.85, roughness: 0.35, metalness: 0.35 });
+const exitRingMat = new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb040, emissiveIntensity: 0.7, roughness: 0.4, metalness: 0.4 });
+
+/* THEME_AUDIO_V1 */
+function canvasTex(w, h, fn) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  fn(img.data, w, h);
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  tex.needsUpdate = true;
+  return tex;
+}
+function makeMarbleTexture() {
+  return canvasTex(512, 512, (d, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const nx = x / w, ny = y / h;
+      const n = fbm(nx * 3.2 + 2.0 * fbm(nx * 1.4, ny * 1.8), ny * 4.5);
+      const v1 = Math.abs(Math.sin((nx * 2.2 + n * 1.8 + ny * 0.35) * Math.PI * 2));
+      const v2 = Math.abs(Math.sin((ny * 3.1 - n * 2.2 + nx * 0.7) * Math.PI * 3.2));
+      const vein = Math.pow(Math.min(v1, v2 * 0.85 + 0.15), 4.2);
+      const cloud = fbm(nx * 5.0, ny * 6.0);
+      const body = 208 + (cloud - 0.5) * 22;
+      const g = clamp(body - vein * 145, 0, 255);
+      const i = (y * w + x) * 4;
+      d[i] = clamp(g + 6, 0, 255); d[i + 1] = clamp(g + 1, 0, 255); d[i + 2] = clamp(g - 4, 0, 255); d[i + 3] = 255;
+    }
+  });
+}
+function makeBrushedTexture() {
+  return canvasTex(512, 256, (d, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const nx = x / w, ny = y / h;
+      const streak = fbm(nx * 28, ny * 1.15);
+      const fine = fbm(nx * 70, ny * 3.2);
+      const v = clamp(0.28 + streak * 0.48 + (fine - 0.5) * 0.16, 0, 1);
+      const i = (y * w + x) * 4;
+      d[i]     = (78 + v * 70) | 0;
+      d[i + 1] = (86 + v * 74) | 0;
+      d[i + 2] = (96 + v * 78) | 0;
+      d[i + 3] = 255;
+    }
+  });
+}
+function makePearlTexture() {
+  return canvasTex(256, 256, (d, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const nx = x / w, ny = y / h;
+      const n = fbm(nx * 3.5, ny * 3.5);
+      const n2 = fbm(nx * 9, ny * 8);
+      const band = 0.5 + 0.5 * Math.sin((nx * 5.5 + ny * 1.8 + n * 1.6) * Math.PI * 2);
+      const v = 0.78 + n * 0.16 + (n2 - 0.5) * 0.08;
+      const i = (y * w + x) * 4;
+      d[i]     = clamp(230 * v + band * 28, 0, 255) | 0;
+      d[i + 1] = clamp(214 * v + 18 + (1.0 - band) * 16, 0, 255) | 0;
+      d[i + 2] = clamp(220 * v + 22 + band * 10, 0, 255) | 0;
+      d[i + 3] = 255;
+    }
+  });
+}
+function makeJadeTexture() {
+  return canvasTex(512, 512, (d, w, h) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const nx = x / w, ny = y / h;
+      const cloud = fbm(nx * 3.2, ny * 3.8);
+      const n = fbm(nx * 2.0 + cloud, ny * 5.5);
+      const vein = Math.pow(Math.abs(Math.sin((nx * 1.6 + n * 2.4 + ny * 0.9) * Math.PI * 3)), 5.5);
+      const ice = Math.pow(Math.max(0, cloud - 0.62), 1.4);
+      const r = clamp(18 + cloud * 36 + vein * 70 + ice * 90, 0, 255);
+      const g = clamp(78 + cloud * 70 - vein * 20 + ice * 50, 0, 255);
+      const b = clamp(48 + cloud * 28 - vein * 8 + ice * 30, 0, 255);
+      const i = (y * w + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  });
+}
+
+const marbleMap = makeMarbleTexture();
+const brushedMap = makeBrushedTexture();
+const pearlMap = makePearlTexture();
+const jadeMap = makeJadeTexture();
+marbleMap.repeat.set(1.2, 1.2);
+brushedMap.repeat.set(1.5, 3.0);
+pearlMap.repeat.set(2, 2);
+jadeMap.repeat.set(1.3, 1.3);
+
+const woodWallMat = new THREE.MeshStandardMaterial({ map: wallMap, roughness: 0.58, metalness: 0.05, color: 0xffffff });
+const marbleWallMat = new THREE.MeshPhysicalMaterial({
+  map: marbleMap, color: 0xf6f1ea, roughness: 0.18, metalness: 0.04,
+  clearcoat: 0.7, clearcoatRoughness: 0.16, envMapIntensity: 0.95
+});
+const titaniumWallMat = new THREE.MeshPhysicalMaterial({
+  map: brushedMap, color: 0x9aa7b4, metalness: 1, roughness: 0.28,
+  envMapIntensity: 1.2, anisotropy: 0.85, anisotropyRotation: 0
+});
+const pearlWallMat = new THREE.MeshPhysicalMaterial({
+  map: pearlMap, color: 0xffe8ef, roughness: 0.18, metalness: 0.22,
+  clearcoat: 0.9, clearcoatRoughness: 0.1, iridescence: 1,
+  iridescenceIOR: 1.3, iridescenceThicknessRange: [140, 420], envMapIntensity: 1.15
+});
+const jadeWallMat = new THREE.MeshPhysicalMaterial({
+  map: jadeMap, color: 0xffffff, roughness: 0.26, metalness: 0.06,
+  clearcoat: 0.55, clearcoatRoughness: 0.22, emissive: 0x07281a,
+  emissiveIntensity: 0.12, envMapIntensity: 0.75
+});
+
+const glassWallUniforms = {
+  uLightDir: glassUniforms.uLightDir,
+  uTint: { value: new THREE.Color(0.82, 0.92, 1.0) },
+  uRim: { value: new THREE.Color(0.85, 0.95, 1.0) }
+};
+const glassWallMat = new THREE.ShaderMaterial({
+  uniforms: glassWallUniforms,
+  transparent: true,
+  depthWrite: true,
+  side: THREE.DoubleSide,
+  fog: false,
+  vertexShader: `
+    varying vec3 vWorldPos;
+    varying vec3 vWorldNormal;
+    void main() {
+      #ifdef USE_INSTANCING
+        vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vWorldNormal = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+      #else
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+      #endif
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform vec3 uLightDir;
+    uniform vec3 uTint;
+    uniform vec3 uRim;
+    varying vec3 vWorldPos;
+    varying vec3 vWorldNormal;
+    void main() {
+      vec3 I = normalize(vWorldPos - cameraPosition);
+      vec3 N = normalize(vWorldNormal);
+      if (dot(N, -I) < 0.0) N = -N;
+      float nv = max(dot(N, -I), 0.0);
+      float fres = pow(1.0 - nv, 2.35);
+      vec3 H = normalize(normalize(uLightDir) - I);
+      float spec = pow(max(dot(N, H), 0.0), 90.0);
+      vec3 col = uTint * (0.18 + fres * 0.9) + uRim * (spec * 0.95 + fres * 0.5);
+      float alpha = 0.12 + fres * 0.60 + spec * 0.22;
+      gl_FragColor = vec4(col, clamp(alpha, 0.10, 0.82));
+    }
+  `
+});
+
+const THEMES = {
+  wood: {
+    id: 'wood', label: '木纹', swatch: ['#8d562c', '#c4842e'],
+    wallMat: woodWallMat,
+    floor: { tint: [0.97, 0.99, 1.03], wash: [0.78, 0.90, 1.0], washAmt: 0.05, fres: [0.72, 0.88, 1.0], rim: [0.80, 0.93, 1.0], rimCore: [1.0, 0.99, 0.98] },
+    ball: { color: 0xd8dee6, metalness: 1, roughness: 0.08, clearcoat: 0.55, clearcoatRoughness: 0.12, iridescence: 0, env: 1.35 },
+    start: { color: 0x3d8f5a, emissive: 0x145c32, emI: 0.55 },
+    exit: { color: 0xe8b14a, emissive: 0xc47a16, emI: 0.85, ring: 0xffd27a, ringEm: 0xffb040, light: 0xffc060 },
+    lights: { hemiSky: 0xc8d4f0, hemiGround: 0x12101c, hemiI: 0.42, key: 0xffe0b0, keyI: 2.15, fill: 0x7a8cb8, fillI: 0.32, rim: 0x6a7fb8, rimI: 0.28 },
+    ui: { accent: '#e8b060', accent2: '#c4842e', ink: '#2a1608', shadow: '#8a5a18', cardTop: 'rgba(72,42,24,.92)', cardBot: 'rgba(36,22,12,.94)', text: '#f6eadc', sheet: 'rgba(22,16,14,.94)' }
+  },
+  marble: {
+    id: 'marble', label: '大理石', swatch: ['#e8e6e1', '#8d8a86'],
+    wallMat: marbleWallMat,
+    floor: { tint: [1.0, 0.99, 0.97], wash: [0.92, 0.93, 0.95], washAmt: 0.04, fres: [0.92, 0.93, 0.96], rim: [0.95, 0.95, 0.97], rimCore: [1.0, 1.0, 1.0] },
+    ball: { color: 0x2a2b30, metalness: 0.85, roughness: 0.12, clearcoat: 0.8, clearcoatRoughness: 0.1, iridescence: 0, env: 1.2 },
+    start: { color: 0x6e8b74, emissive: 0x1c3324, emI: 0.4 },
+    exit: { color: 0xd7b25a, emissive: 0xb8882a, emI: 0.8, ring: 0xf0d28a, ringEm: 0xe0b45a, light: 0xe8c878 },
+    lights: { hemiSky: 0xe8e6f0, hemiGround: 0x1a1816, hemiI: 0.5, key: 0xfff4e6, keyI: 2.05, fill: 0x9aa4b8, fillI: 0.38, rim: 0xc8c2b8, rimI: 0.3 },
+    ui: { accent: '#d4c7b0', accent2: '#9a8d78', ink: '#2a261f', shadow: '#6a6156', cardTop: 'rgba(58,54,50,.93)', cardBot: 'rgba(28,26,24,.95)', text: '#f3efe8', sheet: 'rgba(24,22,20,.95)' }
+  },
+  titanium: {
+    id: 'titanium', label: '钛金属', swatch: ['#8e9aa8', '#c5d0dc'],
+    wallMat: titaniumWallMat,
+    floor: { tint: [0.94, 0.97, 1.04], wash: [0.65, 0.80, 1.0], washAmt: 0.07, fres: [0.70, 0.86, 1.0], rim: [0.75, 0.88, 1.0], rimCore: [0.95, 0.98, 1.0] },
+    ball: { color: 0xc5ced6, metalness: 1, roughness: 0.22, clearcoat: 0.25, clearcoatRoughness: 0.3, iridescence: 0, env: 1.2 },
+    start: { color: 0x4d6a82, emissive: 0x163040, emI: 0.5 },
+    exit: { color: 0x7ec8e8, emissive: 0x2a88b0, emI: 0.85, ring: 0xb0e4f8, ringEm: 0x6ad0f0, light: 0x80d8f0 },
+    lights: { hemiSky: 0xc8d8ec, hemiGround: 0x10141a, hemiI: 0.45, key: 0xe8eef6, keyI: 2.2, fill: 0x6a88b8, fillI: 0.4, rim: 0x88a8d0, rimI: 0.36 },
+    ui: { accent: '#b7c4d2', accent2: '#7b8b9c', ink: '#161b22', shadow: '#4a5562', cardTop: 'rgba(40,48,58,.93)', cardBot: 'rgba(16,20,26,.95)', text: '#e6eef6', sheet: 'rgba(16,20,26,.95)' }
+  },
+  glass: {
+    id: 'glass', label: '玻璃', swatch: ['#c8e8ff', '#7ec8e8'],
+    wallMat: glassWallMat,
+    floor: { tint: [0.97, 0.99, 1.04], wash: [0.75, 0.90, 1.0], washAmt: 0.05, fres: [0.72, 0.90, 1.0], rim: [0.82, 0.95, 1.0], rimCore: [1.0, 1.0, 1.0] },
+    ball: { color: 0xeaf6ff, metalness: 0.88, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.05, iridescence: 0.25, env: 1.4 },
+    start: { color: 0x3aa8c8, emissive: 0x145868, emI: 0.55 },
+    exit: { color: 0x7ae0ff, emissive: 0x20a0d0, emI: 0.9, ring: 0xc0f0ff, ringEm: 0x80e0ff, light: 0x90e8ff },
+    lights: { hemiSky: 0xd0e8ff, hemiGround: 0x0e141c, hemiI: 0.48, key: 0xf2f7ff, keyI: 2.2, fill: 0x6a9ad0, fillI: 0.42, rim: 0x88c8f0, rimI: 0.38 },
+    ui: { accent: '#c5e8f8', accent2: '#6ab0d0', ink: '#10202a', shadow: '#3a6a80', cardTop: 'rgba(28,44,58,.92)', cardBot: 'rgba(10,16,24,.95)', text: '#e8f6ff', sheet: 'rgba(10,16,24,.95)' }
+  },
+  pearl: {
+    id: 'pearl', label: '珍珠', swatch: ['#f7d6e4', '#f4f0ea'],
+    wallMat: pearlWallMat,
+    floor: { tint: [1.02, 0.97, 1.01], wash: [1.0, 0.82, 0.92], washAmt: 0.07, fres: [1.0, 0.82, 0.90], rim: [1.0, 0.88, 0.93], rimCore: [1.0, 0.96, 0.98] },
+    ball: { color: 0xfff0f4, metalness: 0.32, roughness: 0.18, clearcoat: 0.92, clearcoatRoughness: 0.1, iridescence: 1, env: 1.15 },
+    start: { color: 0xd48aa8, emissive: 0x6a3048, emI: 0.45 },
+    exit: { color: 0xe8a888, emissive: 0xc06a50, emI: 0.8, ring: 0xf0c8b0, ringEm: 0xe8a080, light: 0xf0b898 },
+    lights: { hemiSky: 0xffe8f0, hemiGround: 0x1a1014, hemiI: 0.48, key: 0xffe8e0, keyI: 2.05, fill: 0xd8a0b8, fillI: 0.32, rim: 0xf0c0d0, rimI: 0.3 },
+    ui: { accent: '#e8b4c4', accent2: '#c48498', ink: '#3a1c28', shadow: '#8a5060', cardTop: 'rgba(72,40,52,.93)', cardBot: 'rgba(30,16,22,.95)', text: '#fff0f4', sheet: 'rgba(28,16,20,.95)' }
+  },
+  jade: {
+    id: 'jade', label: '翡翠', swatch: ['#2f8f6a', '#e4c872'],
+    wallMat: jadeWallMat,
+    floor: { tint: [0.95, 1.03, 0.97], wash: [0.45, 0.85, 0.62], washAmt: 0.07, fres: [0.55, 0.92, 0.70], rim: [0.70, 0.95, 0.78], rimCore: [0.95, 1.0, 0.85] },
+    ball: { color: 0xe4c872, metalness: 1, roughness: 0.16, clearcoat: 0.55, clearcoatRoughness: 0.18, iridescence: 0, env: 1.3 },
+    start: { color: 0x1e7a52, emissive: 0x0a3a24, emI: 0.55 },
+    exit: { color: 0xe8c45a, emissive: 0xb88620, emI: 0.85, ring: 0xffe08a, ringEm: 0xf0c040, light: 0xffd060 },
+    lights: { hemiSky: 0xd4f0e0, hemiGround: 0x101810, hemiI: 0.45, key: 0xffefd0, keyI: 2.1, fill: 0x4a8868, fillI: 0.36, rim: 0xc8e0a8, rimI: 0.28 },
+    ui: { accent: '#e4c872', accent2: '#b88630', ink: '#1a1408', shadow: '#6a5420', cardTop: 'rgba(28,48,38,.93)', cardBot: 'rgba(10,18,14,.95)', text: '#eef6e8', sheet: 'rgba(10,18,14,.95)' }
+  }
+};
+const THEME_ORDER = ['wood', 'marble', 'titanium', 'glass', 'pearl', 'jade'];
+let currentThemeId = 'wood';
+let wallInst = null;
+let themeExitLight = null;
+let themeExitRing = null;
+
+function getTheme() { return THEMES[currentThemeId] || THEMES.wood; }
+
+function applyTheme(id, persist = true) {
+  if (!THEMES[id]) return;
+  currentThemeId = id;
+  const t = THEMES[id];
+  if (wallInst) {
+    wallInst.material = t.wallMat;
+    wallInst.material.needsUpdate = true;
+  }
+  const F = t.floor;
+  glassUniforms.uTint.value.set(F.tint[0], F.tint[1], F.tint[2]);
+  glassUniforms.uWash.value.set(F.wash[0], F.wash[1], F.wash[2]);
+  glassUniforms.uWashAmt.value = F.washAmt;
+  glassUniforms.uFres.value.set(F.fres[0], F.fres[1], F.fres[2]);
+  glassUniforms.uRim.value.set(F.rim[0], F.rim[1], F.rim[2]);
+  glassUniforms.uRimCore.value.set(F.rimCore[0], F.rimCore[1], F.rimCore[2]);
+  glassWallUniforms.uTint.value.set(F.wash[0], F.wash[1], F.wash[2]);
+  glassWallUniforms.uRim.value.set(F.rim[0], F.rim[1], F.rim[2]);
+
+  const B = t.ball;
+  ballMat.color.setHex(B.color);
+  ballMat.metalness = B.metalness;
+  ballMat.roughness = B.roughness;
+  ballMat.clearcoat = B.clearcoat;
+  ballMat.clearcoatRoughness = B.clearcoatRoughness;
+  ballMat.iridescence = B.iridescence;
+  if (B.iridescence > 0) {
+    ballMat.iridescenceIOR = 1.3;
+    ballMat.iridescenceThicknessRange = [140, 400];
+  }
+  ballMat.envMapIntensity = B.env;
+  ballMat.needsUpdate = true;
+
+  startMat.color.setHex(t.start.color);
+  startMat.emissive.setHex(t.start.emissive);
+  startMat.emissiveIntensity = t.start.emI;
+  exitMat.color.setHex(t.exit.color);
+  exitMat.emissive.setHex(t.exit.emissive);
+  exitMat.emissiveIntensity = t.exit.emI;
+  exitRingMat.color.setHex(t.exit.ring);
+  exitRingMat.emissive.setHex(t.exit.ringEm);
+  exitRingMat.emissiveIntensity = 0.7;
+  if (themeExitLight) themeExitLight.color.setHex(t.exit.light);
+
+  const L = t.lights;
+  hemi.color.setHex(L.hemiSky);
+  hemi.groundColor.setHex(L.hemiGround);
+  hemi.intensity = L.hemiI;
+  key.color.setHex(L.key);
+  key.intensity = L.keyI;
+  fill.color.setHex(L.fill);
+  fill.intensity = L.fillI;
+  rim.color.setHex(L.rim);
+  rim.intensity = L.rimI;
+
+  const u = t.ui;
+  const r = document.documentElement;
+  r.style.setProperty('--accent', u.accent);
+  r.style.setProperty('--accent2', u.accent2);
+  r.style.setProperty('--accent-ink', u.ink);
+  r.style.setProperty('--accent-shadow', u.shadow);
+  r.style.setProperty('--card-top', u.cardTop);
+  r.style.setProperty('--card-bot', u.cardBot);
+  r.style.setProperty('--text', u.text);
+  r.style.setProperty('--sheet-bg', u.sheet);
+  document.body.dataset.theme = id;
+  syncSwatches();
+  if (persist) {
+    try { localStorage.setItem('maze.theme', id); } catch (e) {}
+  }
+}
+
+function loadTheme() {
+  let id = 'wood';
+  try { id = localStorage.getItem('maze.theme') || 'wood'; } catch (e) {}
+  if (!THEMES[id]) id = 'wood';
+  currentThemeId = id;
+}
+
+// ---------- audio (Web Audio, unlocked on first user gesture) ----------
+const MUSIC_OPTS = [
+  { id: 'space', label: '太空氛围' },
+  { id: 'lofi', label: '轻电子' },
+  { id: 'piano', label: '钢琴' },
+  { id: 'nature', label: '自然白噪' },
+  { id: 'off', label: '关闭' }
+];
+const audio = {
+  ctx: null,
+  unlocked: false,
+  master: null,
+  musicGain: null,
+  sfxGain: null,
+  musicId: 'space',
+  musicVol: 0.45,
+  sfxOn: true,
+  sfxVol: 0.7,
+  musicNodes: [],
+  musicTimer: 0,
+  musicStop: null,
+  noiseBuf: null,
+  roll: null,
+  lastHit: 0
+};
+
+function loadAudioSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('maze.audio') || '{}');
+    if (s.musicId && MUSIC_OPTS.some((o) => o.id === s.musicId)) audio.musicId = s.musicId;
+    if (typeof s.musicVol === 'number') audio.musicVol = clamp(s.musicVol, 0, 1);
+    if (typeof s.sfxOn === 'boolean') audio.sfxOn = s.sfxOn;
+    if (typeof s.sfxVol === 'number') audio.sfxVol = clamp(s.sfxVol, 0, 1);
+  } catch (e) {}
+}
+function saveAudioSettings() {
+  try {
+    localStorage.setItem('maze.audio', JSON.stringify({
+      musicId: audio.musicId, musicVol: audio.musicVol, sfxOn: audio.sfxOn, sfxVol: audio.sfxVol
+    }));
+  } catch (e) {}
+}
+
+function ensureAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!audio.ctx) {
+    audio.ctx = new AC();
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = 1;
+    audio.master.connect(audio.ctx.destination);
+    audio.musicGain = audio.ctx.createGain();
+    audio.musicGain.gain.value = audio.musicVol;
+    audio.musicGain.connect(audio.master);
+    audio.sfxGain = audio.ctx.createGain();
+    audio.sfxGain.gain.value = audio.sfxOn ? audio.sfxVol : 0;
+    audio.sfxGain.connect(audio.master);
+    const n = Math.floor(audio.ctx.sampleRate * 1.5);
+    const buf = audio.ctx.createBuffer(1, n, audio.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let b = 0;
+    for (let i = 0; i < n; i++) { b = 0.97 * b + 0.03 * (Math.random() * 2 - 1); d[i] = b * 3.2; }
+    audio.noiseBuf = buf;
+  }
+  return audio.ctx;
+}
+
+function unlockAudio() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  if (!audio.unlocked) {
+    audio.unlocked = true;
+    startMusic(audio.musicId);
+  }
+}
+
+function setMusicVol(v) {
+  audio.musicVol = clamp(v, 0, 1);
+  if (audio.musicGain) audio.musicGain.gain.setTargetAtTime(audio.musicVol, audio.ctx.currentTime, 0.04);
+  saveAudioSettings();
+}
+function setSfxVol(v) {
+  audio.sfxVol = clamp(v, 0, 1);
+  if (audio.sfxGain) audio.sfxGain.gain.setTargetAtTime(audio.sfxOn ? audio.sfxVol : 0, audio.ctx.currentTime, 0.04);
+  saveAudioSettings();
+}
+function setSfxOn(on) {
+  audio.sfxOn = !!on;
+  if (audio.sfxGain) audio.sfxGain.gain.setTargetAtTime(audio.sfxOn ? audio.sfxVol : 0, audio.ctx.currentTime, 0.04);
+  saveAudioSettings();
+  syncAudioUI();
+}
+
+function stopMusic() {
+  if (audio.musicStop) { try { audio.musicStop(); } catch (e) {} }
+  audio.musicStop = null;
+  for (const n of audio.musicNodes) {
+    try { n.stop?.(); } catch (e) {}
+    try { n.disconnect?.(); } catch (e) {}
+  }
+  audio.musicNodes = [];
+}
+
+function addNode(n) { audio.musicNodes.push(n); return n; }
+
+function startMusic(id) {
+  audio.musicId = id || 'off';
+  saveAudioSettings();
+  syncAudioUI();
+  if (!audio.unlocked || !audio.ctx) return;
+  stopMusic();
+  if (audio.musicId === 'off') return;
+  const ctx = audio.ctx;
+  const out = audio.musicGain;
+  const now = ctx.currentTime;
+  let stopped = false;
+  const stops = [];
+
+  function noiseSrc() {
+    const s = ctx.createBufferSource();
+    s.buffer = audio.noiseBuf;
+    s.loop = true;
+    addNode(s);
+    return s;
+  }
+
+  if (id === 'space') {
+    const makePad = (freq, type, gain) => {
+      const o = ctx.createOscillator();
+      o.type = type; o.frequency.value = freq;
+      const g = ctx.createGain(); g.gain.value = gain;
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 600;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07 + Math.random() * 0.05;
+      const lg = ctx.createGain(); lg.gain.value = 220;
+      lfo.connect(lg); lg.connect(f.frequency);
+      o.connect(f); f.connect(g); g.connect(out);
+      o.start(); lfo.start();
+      addNode(o); addNode(g); addNode(f); addNode(lfo);
+    };
+    makePad(55, 'sine', 0.10);
+    makePad(82.4, 'sine', 0.07);
+    makePad(164.8, 'triangle', 0.035);
+    const ns = noiseSrc();
+    const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 900; nf.Q.value = 0.7;
+    const ng = ctx.createGain(); ng.gain.value = 0.025;
+    ns.connect(nf); nf.connect(ng); ng.connect(out); ns.start();
+    addNode(nf); addNode(ng);
+  } else if (id === 'lofi') {
+    const pad = ctx.createOscillator(); pad.type = 'sine'; pad.frequency.value = 110;
+    const pg = ctx.createGain(); pg.gain.value = 0.04;
+    pad.connect(pg); pg.connect(out); pad.start(); addNode(pad); addNode(pg);
+    const beat = 0.5;
+    const notes = [0, 3, 7, 10, 7, 3, 0, 5];
+    let step = 0;
+    const sched = () => {
+      if (stopped) return;
+      const t0 = ctx.currentTime;
+      for (let i = 0; i < 8; i++) {
+        const t = t0 + i * beat;
+        // kick
+        const k = ctx.createOscillator(); k.type = 'sine';
+        const kg = ctx.createGain();
+        k.frequency.setValueAtTime(140, t);
+        k.frequency.exponentialRampToValueAtTime(42, t + 0.1);
+        kg.gain.setValueAtTime(0.16, t);
+        kg.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        k.connect(kg); kg.connect(out); k.start(t); k.stop(t + 0.2);
+        // hat on offbeats
+        const hs = ctx.createBufferSource(); hs.buffer = audio.noiseBuf;
+        const hf = ctx.createBiquadFilter(); hf.type = 'highpass'; hf.frequency.value = 6000;
+        const hg = ctx.createGain();
+        const ht = t + beat * 0.5;
+        hg.gain.setValueAtTime(0.045, ht);
+        hg.gain.exponentialRampToValueAtTime(0.001, ht + 0.06);
+        hs.connect(hf); hf.connect(hg); hg.connect(out); hs.start(ht); hs.stop(ht + 0.07);
+        // arp
+        const n = notes[(step + i) % notes.length];
+        const a = ctx.createOscillator(); a.type = 'triangle';
+        a.frequency.value = 220 * Math.pow(2, n / 12);
+        const ag = ctx.createGain();
+        const at = t + 0.02;
+        ag.gain.setValueAtTime(0.05, at);
+        ag.gain.exponentialRampToValueAtTime(0.001, at + 0.28);
+        const lf = ctx.createBiquadFilter(); lf.type = 'lowpass'; lf.frequency.value = 1400;
+        a.connect(lf); lf.connect(ag); ag.connect(out); a.start(at); a.stop(at + 0.3);
+      }
+      step += 8;
+      audio.musicTimer = setTimeout(sched, beat * 8 * 1000 - 40);
+    };
+    sched();
+    stops.push(() => clearTimeout(audio.musicTimer));
+  } else if (id === 'piano') {
+    const scale = [0, 2, 4, 7, 9, 12, 14, 16, 19];
+    const playNote = (freq, t, dur, amp) => {
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(amp, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      g.connect(out);
+      [1, 2, 3].forEach((h, i) => {
+        const o = ctx.createOscillator(); o.type = 'sine';
+        o.frequency.value = freq * h;
+        const hg = ctx.createGain(); hg.gain.value = [1, 0.32, 0.12][i];
+        o.connect(hg); hg.connect(g); o.start(t); o.stop(t + dur + 0.05);
+      });
+    };
+    const tick = () => {
+      if (stopped) return;
+      const t = ctx.currentTime + 0.05;
+      const n = scale[(Math.random() * scale.length) | 0];
+      playNote(261.63 * Math.pow(2, n / 12) * 0.5, t, 1.8 + Math.random(), 0.11);
+      if (Math.random() < 0.4) {
+        playNote(261.63 * Math.pow(2, (n + 4) / 12) * 0.5, t + 0.03, 1.5, 0.06);
+      }
+      audio.musicTimer = setTimeout(tick, 900 + Math.random() * 1300);
+    };
+    tick();
+    stops.push(() => clearTimeout(audio.musicTimer));
+  } else if (id === 'nature') {
+    const wind = noiseSrc();
+    const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 380;
+    const wg = ctx.createGain(); wg.gain.value = 0.11;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.12;
+    const lg = ctx.createGain(); lg.gain.value = 140;
+    lfo.connect(lg); lg.connect(wf.frequency);
+    wind.connect(wf); wf.connect(wg); wg.connect(out);
+    wind.start(); lfo.start();
+    addNode(wf); addNode(wg); addNode(lfo);
+    const rainTick = () => {
+      if (stopped) return;
+      const t = ctx.currentTime;
+      const s = ctx.createBufferSource(); s.buffer = audio.noiseBuf;
+      const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 2500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.03 + Math.random() * 0.03, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      s.connect(f); f.connect(g); g.connect(out);
+      s.start(t); s.stop(t + 0.06);
+      audio.musicTimer = setTimeout(rainTick, 40 + Math.random() * 90);
+    };
+    rainTick();
+    stops.push(() => clearTimeout(audio.musicTimer));
+  }
+
+  audio.musicStop = () => { stopped = true; stops.forEach((fn) => fn()); };
+}
+
+function sfxOut() { return audio.unlocked && audio.ctx && audio.sfxOn ? audio.sfxGain : null; }
+
+function playClick() {
+  const out = sfxOut(); if (!out) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1400;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.05);
+}
+
+function playHit(impact) {
+  const out = sfxOut(); if (!out) return;
+  const now = performance.now();
+  if (now - audio.lastHit < 70) return;
+  audio.lastHit = now;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  const amp = clamp(impact / 5.5, 0.06, 0.45);
+  const theme = currentThemeId;
+  if (theme === 'wood') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 160;
+    const g = ctx.createGain(); g.gain.setValueAtTime(amp, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.13);
+    const s = ctx.createBufferSource(); s.buffer = audio.noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 400; f.Q.value = 0.8;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(amp * 0.7, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    s.connect(f); f.connect(ng); ng.connect(out); s.start(t); s.stop(t + 0.09);
+  } else if (theme === 'marble') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 820;
+    const g = ctx.createGain(); g.gain.setValueAtTime(amp * 0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.08);
+    const s = ctx.createBufferSource(); s.buffer = audio.noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1800;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(amp * 0.5, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    s.connect(f); f.connect(ng); ng.connect(out); s.start(t); s.stop(t + 0.05);
+  } else if (theme === 'titanium') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(1480, t); o.frequency.exponentialRampToValueAtTime(900, t + 0.18);
+    const g = ctx.createGain(); g.gain.setValueAtTime(amp * 0.65, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.23);
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 2960;
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(amp * 0.2, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t + 0.11);
+  } else if (theme === 'glass') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 2400;
+    const g = ctx.createGain(); g.gain.setValueAtTime(amp * 0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.17);
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 3600;
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(amp * 0.28, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t + 0.1);
+  } else if (theme === 'pearl') {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 1100;
+    const g = ctx.createGain(); g.gain.setValueAtTime(amp * 0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.07);
+  } else {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(660, t + 0.35);
+    const g = ctx.createGain(); g.gain.setValueAtTime(amp * 0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.42);
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 1320;
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(amp * 0.22, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t + 0.32);
+  }
+}
+
+function playFallWhoosh() {
+  const out = sfxOut(); if (!out) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(420, t); o.frequency.exponentialRampToValueAtTime(60, t + 1.1);
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(1800, t); f.frequency.exponentialRampToValueAtTime(200, t + 1.1);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+  o.connect(f); f.connect(g); g.connect(out); o.start(t); o.stop(t + 1.25);
+  const s = ctx.createBufferSource(); s.buffer = audio.noiseBuf;
+  const ng = ctx.createGain(); ng.gain.setValueAtTime(0.12, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 1.15);
+  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 900;
+  s.connect(nf); nf.connect(ng); ng.connect(out); s.start(t); s.stop(t + 1.2);
+}
+
+function playWin() {
+  const out = sfxOut(); if (!out) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain();
+    const tt = t + i * 0.12;
+    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(0.12, tt + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, tt + 0.55);
+    o.connect(g); g.connect(out); o.start(tt); o.stop(tt + 0.56);
+  });
+}
+
+function playGameOver() {
+  const out = sfxOut(); if (!out) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  [392, 311, 247].forEach((f, i) => {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain();
+    const tt = t + i * 0.22;
+    g.gain.setValueAtTime(0.12, tt); g.gain.exponentialRampToValueAtTime(0.001, tt + 0.45);
+    o.connect(g); g.connect(out); o.start(tt); o.stop(tt + 0.46);
+  });
+}
+
+function updateRollSound(speed) {
+  if (!audio.unlocked || !audio.ctx || !audio.sfxOn) {
+    if (audio.roll) audio.roll.gain.gain.setTargetAtTime(0, audio.ctx ? audio.ctx.currentTime : 0, 0.08);
+    return;
+  }
+  const ctx = audio.ctx;
+  if (!audio.roll) {
+    const src = ctx.createBufferSource(); src.buffer = audio.noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 500; f.Q.value = 1.2;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(g); g.connect(audio.sfxGain);
+    src.start();
+    audio.roll = { src, filter: f, gain: g };
+  }
+  const amt = clamp((speed - 0.15) / 5.2, 0, 1);
+  audio.roll.gain.gain.setTargetAtTime(amt * 0.16, ctx.currentTime, 0.06);
+  audio.roll.filter.frequency.setTargetAtTime(380 + amt * 720, ctx.currentTime, 0.06);
+}
+
+// ---------- theme / audio UI ----------
+function swatchHTML(id, withLabel) {
+  const t = THEMES[id];
+  const on = id === currentThemeId ? ' on' : '';
+  return `<button type="button" class="swatch${on}" data-theme="${id}" aria-label="${t.label}">
+    <span class="dot" style="background:linear-gradient(135deg,${t.swatch[0]},${t.swatch[1]})"></span>
+    ${withLabel ? `<span class="sw-lab">${t.label}</span>` : ''}
+  </button>`;
+}
+function syncSwatches() {
+  document.querySelectorAll('.swatch').forEach((el) => {
+    el.classList.toggle('on', el.dataset.theme === currentThemeId);
+  });
+}
+function bindSwatches(root) {
+  root.querySelectorAll('.swatch').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      unlockAudio(); playClick();
+      applyTheme(el.dataset.theme);
+    });
+  });
+}
+function fillSwatchRow(el, withLabel) {
+  el.innerHTML = THEME_ORDER.map((id) => swatchHTML(id, withLabel)).join('');
+  bindSwatches(el);
+}
+
+function syncAudioUI() {
+  document.querySelectorAll('.mchip').forEach((el) => {
+    el.classList.toggle('on', el.dataset.music === audio.musicId);
+  });
+  const mv = document.getElementById('musicVol');
+  const sv = document.getElementById('sfxVol');
+  const so = document.getElementById('sfxOn');
+  if (mv && mv.value !== String(audio.musicVol)) mv.value = audio.musicVol;
+  if (sv && sv.value !== String(audio.sfxVol)) sv.value = audio.sfxVol;
+  if (so) so.checked = audio.sfxOn;
+  const lab = document.getElementById('sfxOnLab');
+  if (lab) lab.textContent = audio.sfxOn ? '开' : '关';
+}
+
+function openSheet() {
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('sheetBak').classList.add('open');
+}
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
+  document.getElementById('sheetBak').classList.remove('open');
+}
+
+function initThemeAudioUI() {
+  loadTheme();
+  loadAudioSettings();
+  fillSwatchRow(document.getElementById('startSwatches'), true);
+  fillSwatchRow(document.getElementById('sheetSwatches'), true);
+  const chips = document.getElementById('musicChips');
+  chips.innerHTML = MUSIC_OPTS.map((o) => `<button type="button" class="mchip" data-music="${o.id}">${o.label}</button>`).join('');
+  chips.addEventListener('click', (e) => {
+    const b = e.target.closest('.mchip'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    unlockAudio(); playClick();
+    startMusic(b.dataset.music);
+  });
+  document.getElementById('musicVol').addEventListener('input', (e) => { unlockAudio(); setMusicVol(+e.target.value); });
+  document.getElementById('sfxVol').addEventListener('input', (e) => { unlockAudio(); setSfxVol(+e.target.value); });
+  document.getElementById('sfxOn').addEventListener('change', (e) => { unlockAudio(); playClick(); setSfxOn(e.target.checked); });
+  document.getElementById('themeBtn').addEventListener('click', (e) => { e.stopPropagation(); unlockAudio(); playClick(); openSheet(); });
+  document.getElementById('sheetBak').addEventListener('click', closeSheet);
+  document.getElementById('sheetClose').addEventListener('click', (e) => { e.stopPropagation(); playClick(); closeSheet(); });
+  syncAudioUI();
+  applyTheme(currentThemeId, false);
+}
+
 
 // ---------- maze generation (recursive backtracker) ----------
 function generateMaze(cols, rows) {
@@ -680,18 +1530,18 @@ function buildLevel(lv) {
   }
 
   const wallGeom = new THREE.BoxGeometry(1, WALL_H, 1);
-  const wallMesh = new THREE.InstancedMesh(wallGeom, wallMat, wallSpecs.length);
-  wallMesh.castShadow = true;
-  wallMesh.receiveShadow = true;
+  wallInst = new THREE.InstancedMesh(wallGeom, getTheme().wallMat, wallSpecs.length);
+  wallInst.castShadow = true;
+  wallInst.receiveShadow = true;
   const dummy = new THREE.Object3D();
   wallSpecs.forEach((s, i) => {
     dummy.position.set(s.x, WALL_H * 0.5, s.z);
     dummy.scale.set(s.sx, 1, s.sz);
     dummy.updateMatrix();
-    wallMesh.setMatrixAt(i, dummy.matrix);
+    wallInst.setMatrixAt(i, dummy.matrix);
   });
-  wallMesh.instanceMatrix.needsUpdate = true;
-  mazeRoot.add(wallMesh);
+  wallInst.instanceMatrix.needsUpdate = true;
+  mazeRoot.add(wallInst);
 
   startPos.copy(cellCenter(0, 0));
   exitPos.copy(cellCenter(cols - 1, rows - 1));
@@ -705,16 +1555,16 @@ function buildLevel(lv) {
   exitPad.position.set(exitPos.x, 0.01, exitPos.z);
   exitPad.receiveShadow = true;
   mazeRoot.add(exitPad);
-  const exitRing = new THREE.Mesh(
+  themeExitRing = new THREE.Mesh(
     new THREE.TorusGeometry(CELL * 0.30, 0.012, 8, 24),
-    new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb040, emissiveIntensity: 0.7, roughness: 0.4, metalness: 0.4 })
+    exitRingMat
   );
-  exitRing.rotation.x = Math.PI / 2;
-  exitRing.position.set(exitPos.x, 0.02, exitPos.z);
-  mazeRoot.add(exitRing);
-  const exitLight = new THREE.PointLight(0xffc060, 0.7, 1.6);
-  exitLight.position.set(exitPos.x, 0.35, exitPos.z);
-  mazeRoot.add(exitLight);
+  themeExitRing.rotation.x = Math.PI / 2;
+  themeExitRing.position.set(exitPos.x, 0.02, exitPos.z);
+  mazeRoot.add(themeExitRing);
+  themeExitLight = new THREE.PointLight(0xffc060, 0.7, 1.6);
+  themeExitLight.position.set(exitPos.x, 0.35, exitPos.z);
+  mazeRoot.add(themeExitLight);
 
   if (!ball) {
     ball = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 32, 24), ballMat);
@@ -738,6 +1588,7 @@ function buildLevel(lv) {
   updateShadowCamera(boardW);
   updateLevelLabel();
   updateLivesHUD();
+  applyTheme(currentThemeId, false);
 }
 
 function planGaps(ox, oz, hw, hd) {
@@ -851,6 +1702,7 @@ function resetBall() {
 // ---------- physics ----------
 function collideWalls() {
   const r = RADIUS * 0.98;
+  let bestImpact = 0;
   for (let n = 0; n < 3; n++) {
     let hit = false;
     for (const b of wallBoxes) {
@@ -864,10 +1716,10 @@ function collideWalls() {
           const left = pos.x - b.minX, right = b.maxX - pos.x;
           const top = pos.z - b.minZ, bot = b.maxZ - pos.z;
           const m = Math.min(left, right, top, bot);
-          if (m === left) { pos.x = b.minX - r; if (vel.x > 0) vel.x = -vel.x * RESTITUTION; }
-          else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) vel.x = -vel.x * RESTITUTION; }
-          else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) vel.z = -vel.z * RESTITUTION; }
-          else { pos.z = b.maxZ + r; if (vel.z < 0) vel.z = -vel.z * RESTITUTION; }
+          if (m === left) { pos.x = b.minX - r; if (vel.x > 0) { bestImpact = Math.max(bestImpact, vel.x); vel.x = -vel.x * RESTITUTION; } }
+          else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) { bestImpact = Math.max(bestImpact, -vel.x); vel.x = -vel.x * RESTITUTION; } }
+          else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) { bestImpact = Math.max(bestImpact, vel.z); vel.z = -vel.z * RESTITUTION; } }
+          else { pos.z = b.maxZ + r; if (vel.z < 0) { bestImpact = Math.max(bestImpact, -vel.z); vel.z = -vel.z * RESTITUTION; } }
           hit = true;
         }
         continue;
@@ -876,10 +1728,10 @@ function collideWalls() {
         const left = pos.x - b.minX, right = b.maxX - pos.x;
         const top = pos.z - b.minZ, bot = b.maxZ - pos.z;
         const m = Math.min(left, right, top, bot);
-        if (m === left) { pos.x = b.minX - r; if (vel.x > 0) vel.x = -vel.x * RESTITUTION; }
-        else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) vel.x = -vel.x * RESTITUTION; }
-        else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) vel.z = -vel.z * RESTITUTION; }
-        else { pos.z = b.maxZ + r; if (vel.z < 0) vel.z = -vel.z * RESTITUTION; }
+        if (m === left) { pos.x = b.minX - r; if (vel.x > 0) { bestImpact = Math.max(bestImpact, vel.x); vel.x = -vel.x * RESTITUTION; } }
+        else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) { bestImpact = Math.max(bestImpact, -vel.x); vel.x = -vel.x * RESTITUTION; } }
+        else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) { bestImpact = Math.max(bestImpact, vel.z); vel.z = -vel.z * RESTITUTION; } }
+        else { pos.z = b.maxZ + r; if (vel.z < 0) { bestImpact = Math.max(bestImpact, -vel.z); vel.z = -vel.z * RESTITUTION; } }
         hit = true;
         continue;
       }
@@ -890,6 +1742,7 @@ function collideWalls() {
       pos.z += nz * pen;
       const vn = vel.x * nx + vel.z * nz;
       if (vn < 0) {
+        bestImpact = Math.max(bestImpact, -vn);
         vel.x -= (1 + RESTITUTION) * vn * nx;
         vel.z -= (1 + RESTITUTION) * vn * nz;
       }
@@ -897,6 +1750,7 @@ function collideWalls() {
     }
     if (!hit) break;
   }
+  if (bestImpact > 0.45) playHit(bestImpact);
 }
 
 function physicsStep(dt) {
@@ -960,6 +1814,7 @@ function beginFall() {
   ball.position.copy(fall.startPos);
   ball.quaternion.copy(fall.startQuat);
   if (contactShadow) contactShadow.visible = false;
+  playFallWhoosh();
 }
 
 function updateFall(dt) {
@@ -1201,6 +2056,7 @@ function startPlay() {
   elapsed = 0;
   timeLabel.textContent = '0.0 秒';
   hideOverlay();
+  document.getElementById('themeBtn').style.display = 'block';
   updateLivesHUD();
   const gyro = device.listening || device.enabled;
   calBtn.style.display = gyro ? 'block' : 'none';
@@ -1212,8 +2068,9 @@ function startPlay() {
 }
 
 function showWin() {
+  document.getElementById('startExtras').hidden = true;
   document.getElementById('cardTitle').textContent = '走出迷宫';
-  cardSub.textContent = '小球到达金色出口';
+  cardSub.textContent = '小球到达出口';
   cardStat.hidden = false;
   cardStat.textContent = '用时 ' + elapsed.toFixed(1) + ' 秒';
   startBtn.textContent = '再玩一次';
@@ -1221,11 +2078,13 @@ function showWin() {
   nextBtn.textContent = level >= 5 ? '再来一关' : '下一关（更大迷宫）';
   calBtn.style.display = 'none';
   showOverlay();
+  playWin();
 }
 
 function showGameOver() {
   gameOver = true;
   playing = false;
+  document.getElementById('startExtras').hidden = true;
   document.getElementById('cardTitle').textContent = '游戏结束';
   cardSub.textContent = '生命用尽，掉入了无尽星空';
   cardStat.hidden = false;
@@ -1234,9 +2093,11 @@ function showGameOver() {
   nextBtn.hidden = true;
   calBtn.style.display = 'none';
   showOverlay();
+  playGameOver();
 }
 
 startBtn.addEventListener('click', async () => {
+  unlockAudio();
   const gyro = await enableGyro();
   if (gameOver) {
     lives = MAX_LIVES;
@@ -1305,8 +2166,11 @@ function frame(now) {
       if (contactShadow) contactShadow.position.set(pos.x, 0.003, pos.z);
       elapsed = (now - startTime) / 1000;
       timeLabel.textContent = elapsed.toFixed(1) + ' 秒';
+      updateRollSound(Math.hypot(vel.x, vel.z));
       checkWin();
     }
+  } else {
+    updateRollSound(0);
   }
 
   if (hintTimer > 0) {
@@ -1318,6 +2182,7 @@ function frame(now) {
 }
 
 // preview on the start screen: already-built maze, ball at start
+initThemeAudioUI();
 buildLevel(1);
 requestAnimationFrame(frame);
 
@@ -1339,11 +2204,17 @@ window.__maze = {
       maxTilt: MAX_TILT, tiltHold: !!tilt.hold,
       lives, falling: fall.active, gameOver, won,
       gaps: gaps.map((g) => ({ side: g.side, min: g.min, max: g.max })),
-      gapWidth: gapWidthFor(level)
+      gapWidth: gapWidthFor(level),
+      theme: currentThemeId,
+      music: audio.musicId
     };
   },
   startPlay,
   buildLevel,
+  setTheme: (id) => applyTheme(id),
+  getTheme: () => currentThemeId,
+  listThemes: () => THEME_ORDER.slice(),
+  setMusic: (id) => { unlockAudio(); startMusic(id); },
   setLives(n) { lives = n; updateLivesHUD(); },
   setTilt(x, z) { tilt.hold = true; tilt.tx = x; tilt.tz = z; keys.n = keys.s = keys.e = keys.w = false; },
   press(dir, down = true) { tilt.hold = false; if (keys[dir] !== undefined) keys[dir] = down; },
