@@ -32,7 +32,11 @@
   }
   #hud .title { font-weight: 650; font-size: 15px; letter-spacing: .06em; }
   #hud .title small { display: block; font-weight: 400; opacity: .7; font-size: 12px; margin-top: 2px; letter-spacing: .02em; }
-  #hud .time { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; padding-top: 1px; }
+  #hud .hud-right { text-align: right; }
+  #hud .lives { font-size: 14px; font-weight: 600; letter-spacing: .04em; margin-bottom: 3px; }
+  #hud .lives .hearts { letter-spacing: .14em; color: #ff6b7a; }
+  #hud .lives .hearts .off { color: rgba(246,234,220,.28); }
+  #hud .time { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; }
   #calibrate {
     position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     z-index: 5; pointer-events: auto;
@@ -87,6 +91,7 @@
   }
   @media (max-width: 420px) {
     #hud .title { font-size: 13px; }
+    #hud .lives { font-size: 13px; }
     #hud .time { font-size: 16px; }
     .card h1 { font-size: 22px; }
   }
@@ -100,15 +105,18 @@
 </head>
 <body>
 <div id="hud" class="ui">
-  <div class="title">木盒迷宫<small id="levelLabel">第 1 关</small></div>
-  <div class="time" id="timeLabel">0.0 秒</div>
+  <div class="title">木盒迷宫<small id="levelLabel">第 1 关 · 难度 1</small></div>
+  <div class="hud-right">
+    <div class="lives" id="livesLabel">生命 <span class="hearts">❤❤❤</span></div>
+    <div class="time" id="timeLabel">0.0 秒</div>
+  </div>
 </div>
 <button class="ui" id="calibrate">校准水平</button>
-<div id="hint" class="ui">倾斜手机，让金属小球滚向出口</div>
+<div id="hint" class="ui">倾斜木盒，滚向金色出口 · 小心外墙开口</div>
 <div id="overlay" class="ui">
   <div class="card" id="card">
-    <h1>木盒迷宫</h1>
-    <p class="sub" id="cardSub">倾斜手机，控制金属小球滚出木质迷宫。<br>首次需允许访问陀螺仪；桌面可用方向键或拖动屏幕。</p>
+    <h1 id="cardTitle">木盒迷宫</h1>
+    <p class="sub" id="cardSub">倾斜木盒，让金属小球滚向金色出口。外墙有开口，掉下去会坠入星空并失去一条生命。<br>每局 3 次机会。首次需允许访问陀螺仪；桌面可用方向键或拖动屏幕。</p>
     <div class="stat" id="cardStat" hidden></div>
     <button class="btn" id="startBtn">开始游戏 / 启用陀螺仪</button>
     <button class="btn ghost" id="nextBtn" hidden>下一关（更大迷宫）</button>
@@ -335,13 +343,29 @@ function makeWoodTexture({ w = 512, h = 512, c0 = [0x8b, 0x57, 0x2e], c1 = [0x4a
   return tex;
 }
 
-const floorMap = makeWoodTexture({ c0: [0xa0, 0x6c, 0x3c], c1: [0x5a, 0x34, 0x18], rings: 8, repeatX: 2, repeatY: 2, straight: true });
 const wallMap  = makeWoodTexture({ c0: [0x8d, 0x56, 0x2c], c1: [0x3e, 0x22, 0x10], rings: 16, repeatX: 1, repeatY: 1 });
-const frameMap = makeWoodTexture({ c0: [0x7a, 0x48, 0x24], c1: [0x32, 0x1a, 0x0c], rings: 9,  repeatX: 2, repeatY: 1 });
-
-const floorMat = new THREE.MeshStandardMaterial({ map: floorMap, roughness: 0.62, metalness: 0.04, color: 0xffffff });
 const wallMat  = new THREE.MeshStandardMaterial({ map: wallMap,  roughness: 0.58, metalness: 0.05, color: 0xffffff });
-const frameMat = new THREE.MeshStandardMaterial({ map: frameMap, roughness: 0.55, metalness: 0.06, color: 0xffffff });
+
+// Frosted glass floor. Transmission looks best on desktop; on phones a cheaper
+// transparent + clearcoat stand-in keeps the starfield visible without an extra pass.
+const liteGlass = /iPhone|iPad|iPod|Android|Mobile|MicroMessenger/i.test(navigator.userAgent || '');
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0x9eb4c8,
+  metalness: 0.05,
+  roughness: liteGlass ? 0.34 : 0.22,
+  transmission: liteGlass ? 0.0 : 0.94,
+  thickness: 0.22,
+  ior: 1.45,
+  transparent: true,
+  opacity: liteGlass ? 0.38 : 1,
+  depthWrite: true,
+  side: THREE.DoubleSide,
+  clearcoat: 0.75,
+  clearcoatRoughness: 0.18,
+  envMapIntensity: 1.25,
+  attenuationColor: new THREE.Color(0x6e8aa0),
+  attenuationDistance: 1.2
+});
 const ballMat  = new THREE.MeshPhysicalMaterial({
   color: 0xd8dee6,
   metalness: 1,
@@ -389,10 +413,9 @@ function generateMaze(cols, rows) {
 const CELL = 0.72;
 const WALL_T = 0.11;
 const WALL_H = 0.34;
-const FRAME_W = 0.28;
-const FLOOR_Y = 0;
-const FLOOR_T = 0.08;
+const FLOOR_T = 0.07;
 const RADIUS = 0.13;
+const MAX_LIVES = 3;
 const G = 19;
 const FRICTION = 1.15;
 const RESTITUTION = 0.32;
@@ -405,10 +428,23 @@ const TILT_SENS = 0.85;
 let level = 1;
 let cols = 7, rows = 7;
 let wallBoxes = []; // {minX,maxX,minZ,maxZ}
+let gaps = []; // {side:'n'|'s'|'e'|'w', min, max}
 let startPos = new THREE.Vector3();
 let exitPos = new THREE.Vector3();
 let mazeRoot = null;
 let ball = null;
+let contactShadow = null;
+let lives = MAX_LIVES;
+let falling = false;
+let gameOver = false;
+const fall = {
+  active: false,
+  t: 0,
+  dur: 1.55,
+  startPos: new THREE.Vector3(),
+  startVel: new THREE.Vector3(),
+  startQuat: new THREE.Quaternion()
+};
 
 const pos = new THREE.Vector3();
 const vel = new THREE.Vector3();
@@ -444,6 +480,16 @@ const tmpV = new THREE.Vector3();
 function sizeForLevel(lv) {
   return Math.min(7 + (lv - 1) * 2, 15);
 }
+function gapCountFor(lv) {
+  const max = Math.max(4, sizeForLevel(lv) * 2 - 4); // eligible edges are plentiful
+  return Math.min(1 + (lv - 1), max);
+}
+function gapWidthFor(lv) {
+  return CELL * Math.min(0.5 + (lv - 1) * 0.12, 1.4);
+}
+function boardExtent() {
+  return { hw: cols * CELL * 0.5, hd: rows * CELL * 0.5 };
+}
 
 function cellCenter(i, j) {
   const ox = (cols - 1) * CELL * 0.5;
@@ -464,6 +510,7 @@ function clearMaze() {
     });
   }
   wallBoxes = [];
+  gaps = [];
   mazeRoot = new THREE.Group();
   board.add(mazeRoot);
 }
@@ -475,38 +522,22 @@ function buildLevel(lv) {
   const cells = generateMaze(cols, rows);
   const ox = (cols - 1) * CELL * 0.5;
   const oz = (rows - 1) * CELL * 0.5;
-  const boardW = cols * CELL + FRAME_W * 2;
-  const boardD = rows * CELL + FRAME_W * 2;
+  const hw = cols * CELL * 0.5;
+  const hd = rows * CELL * 0.5;
+  const boardW = cols * CELL + WALL_T;
+  const boardD = rows * CELL + WALL_T;
 
-  // floor
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(boardW - 0.02, FLOOR_T, boardD - 0.02), floorMat);
+  // frosted-glass floor (extends to the outer face of the boundary walls)
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(boardW, FLOOR_T, boardD), glassMat);
+  floor.name = 'glassFloor';
   floor.position.y = -FLOOR_T * 0.5;
   floor.receiveShadow = true;
+  floor.renderOrder = 0;
   mazeRoot.add(floor);
 
-  // outer wooden frame (tray lip)
-  const lipH = WALL_H + 0.06;
-  const segs = [
-    { x: 0, z: -(rows * CELL) * 0.5 - FRAME_W * 0.5, sx: boardW, sz: FRAME_W },
-    { x: 0, z:  (rows * CELL) * 0.5 + FRAME_W * 0.5, sx: boardW, sz: FRAME_W },
-    { x: -(cols * CELL) * 0.5 - FRAME_W * 0.5, z: 0, sx: FRAME_W, sz: rows * CELL },
-    { x:  (cols * CELL) * 0.5 + FRAME_W * 0.5, z: 0, sx: FRAME_W, sz: rows * CELL }
-  ];
-  for (const s of segs) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(s.sx, lipH, s.sz), frameMat);
-    m.position.set(s.x, lipH * 0.5, s.z);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    mazeRoot.add(m);
-    addBox(s.x - s.sx * 0.5, s.x + s.sx * 0.5, s.z - s.sz * 0.5, s.z + s.sz * 0.5);
-  }
-  // underside slab so the tray looks solid when tilted
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(boardW, 0.1, boardD), frameMat);
-  slab.position.y = -FLOOR_T - 0.05;
-  slab.receiveShadow = true;
-  mazeRoot.add(slab);
+  planGaps(ox, oz, hw, hd);
 
-  // inner walls as instanced boxes
+  // walls as instanced boxes (outer boundary uses the same style, with gaps punched out)
   const wallSpecs = [];
   const seen = new Set();
   function wallKey(x, z, sx, sz) {
@@ -519,18 +550,43 @@ function buildLevel(lv) {
     wallSpecs.push({ x, z, sx, sz });
     addBox(x - sx * 0.5, x + sx * 0.5, z - sz * 0.5, z + sz * 0.5);
   }
+  function subtractIntervals(intervals, gmin, gmax) {
+    const out = [];
+    for (const it of intervals) {
+      if (gmax <= it.a || gmin >= it.b) { out.push(it); continue; }
+      if (gmin > it.a) out.push({ a: it.a, b: Math.min(gmin, it.b) });
+      if (gmax < it.b) out.push({ a: Math.max(gmax, it.a), b: it.b });
+    }
+    return out;
+  }
+  function addMaybeGappedWall(x, z, sx, sz, side) {
+    if (!side) { addWall(x, z, sx, sz); return; }
+    const alongX = (side === 'n' || side === 's');
+    let intervals = alongX
+      ? [{ a: x - sx * 0.5, b: x + sx * 0.5 }]
+      : [{ a: z - sz * 0.5, b: z + sz * 0.5 }];
+    for (const g of gaps) {
+      if (g.side === side) intervals = subtractIntervals(intervals, g.min, g.max);
+    }
+    for (const it of intervals) {
+      const len = it.b - it.a;
+      if (len < 0.025) continue;
+      const mid = (it.a + it.b) * 0.5;
+      if (alongX) addWall(mid, z, len, WALL_T);
+      else addWall(x, mid, WALL_T, len);
+    }
+  }
 
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
       const cx = i * CELL - ox;
       const cz = j * CELL - oz;
       const c = cells[j][i];
-      // walls sit on cell edges; length covers the passage plus a bit to close corners
       const len = CELL + WALL_T * 0.02;
-      if (c.n) addWall(cx, cz - CELL * 0.5, len, WALL_T);
-      if (c.s) addWall(cx, cz + CELL * 0.5, len, WALL_T);
-      if (c.w) addWall(cx - CELL * 0.5, cz, WALL_T, len);
-      if (c.e) addWall(cx + CELL * 0.5, cz, WALL_T, len);
+      if (c.n) addMaybeGappedWall(cx, cz - CELL * 0.5, len, WALL_T, j === 0 ? 'n' : null);
+      if (c.s) addMaybeGappedWall(cx, cz + CELL * 0.5, len, WALL_T, j === rows - 1 ? 's' : null);
+      if (c.w) addMaybeGappedWall(cx - CELL * 0.5, cz, WALL_T, len, i === 0 ? 'w' : null);
+      if (c.e) addMaybeGappedWall(cx + CELL * 0.5, cz, WALL_T, len, i === cols - 1 ? 'e' : null);
     }
   }
 
@@ -574,13 +630,87 @@ function buildLevel(lv) {
   if (!ball) {
     ball = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 32, 24), ballMat);
     ball.castShadow = true;
+    ball.name = 'ball';
     board.add(ball);
+  }
+  if (!contactShadow) {
+    const cMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false
+    });
+    contactShadow = new THREE.Mesh(new THREE.CircleGeometry(RADIUS * 1.7, 24), cMat);
+    contactShadow.rotation.x = -Math.PI / 2;
+    contactShadow.position.y = 0.003;
+    contactShadow.renderOrder = 2;
+    contactShadow.name = 'contactShadow';
+    board.add(contactShadow);
   }
   resetBall();
   fitCamera();
   updateShadowCamera(boardW);
+  updateLevelLabel();
+  updateLivesHUD();
+}
 
-  document.getElementById('levelLabel').textContent = '第 ' + level + ' 关 · ' + cols + '×' + rows;
+function planGaps(ox, oz, hw, hd) {
+  gaps = [];
+  const width = gapWidthFor(level);
+  const want = gapCountFor(level);
+  const eligible = [];
+  for (let i = 0; i < cols; i++) {
+    if (i !== 0) eligible.push({ side: 'n', center: i * CELL - ox });
+    if (i !== cols - 1) eligible.push({ side: 's', center: i * CELL - ox });
+  }
+  for (let j = 0; j < rows; j++) {
+    if (j !== 0) eligible.push({ side: 'w', center: j * CELL - oz });
+    if (j !== rows - 1) eligible.push({ side: 'e', center: j * CELL - oz });
+  }
+  // shuffle
+  for (let i = eligible.length - 1; i > 0; i--) {
+    const k = (Math.random() * (i + 1)) | 0;
+    const tmp = eligible[i]; eligible[i] = eligible[k]; eligible[k] = tmp;
+  }
+  function protectedRange(side) {
+    if (side === 'n') return [-hw, -hw + CELL];
+    if (side === 'w') return [-hd, -hd + CELL];
+    if (side === 's') return [hw - CELL, hw];
+    if (side === 'e') return [hd - CELL, hd];
+    return [0, 0];
+  }
+  function overlaps(side, a, b) {
+    for (const g of gaps) {
+      if (g.side !== side) continue;
+      if (!(b <= g.min || a >= g.max)) return true;
+    }
+    const [p0, p1] = protectedRange(side);
+    if (!(b <= p0 || a >= p1)) return true;
+    return false;
+  }
+  for (const e of eligible) {
+    if (gaps.length >= want) break;
+    let a = e.center - width * 0.5;
+    let b = e.center + width * 0.5;
+    const limit = (e.side === 'n' || e.side === 's') ? hw : hd;
+    a = Math.max(a, -limit + 0.02);
+    b = Math.min(b,  limit - 0.02);
+    if (b - a < width * 0.45) continue;
+    if (overlaps(e.side, a, b)) continue;
+    gaps.push({ side: e.side, min: a, max: b });
+  }
+}
+
+function updateLevelLabel() {
+  const el = document.getElementById('levelLabel');
+  el.textContent = '第 ' + level + ' 关 · 难度 ' + level + ' · 开口 ' + gaps.length;
+}
+
+function updateLivesHUD() {
+  const el = document.getElementById('livesLabel');
+  if (!el) return;
+  let hearts = '';
+  for (let i = 0; i < MAX_LIVES; i++) {
+    hearts += i < lives ? '❤' : '<span class="off">❤</span>';
+  }
+  el.innerHTML = '生命 <span class="hearts">' + hearts + '</span>';
 }
 
 function updateShadowCamera(boardW) {
@@ -594,7 +724,7 @@ function updateShadowCamera(boardW) {
 function fitCamera() {
   const aspect = innerWidth / innerHeight;
   camera.aspect = aspect;
-  const boardW = cols * CELL + FRAME_W * 2;
+  const boardW = cols * CELL + WALL_T;
   camera.fov = aspect < 0.72 ? 50 : 42;
   const half = boardW * 0.55;
   const vFit = half / Math.tan(degToRad(camera.fov * 0.5));
@@ -608,13 +738,25 @@ function fitCamera() {
 }
 
 function resetBall() {
+  if (ball && ball.parent !== board) board.add(ball);
+  ball.scale.setScalar(1);
+  ball.visible = true;
   pos.copy(startPos);
+  pos.y = RADIUS;
   vel.set(0, 0, 0);
   ball.position.copy(pos);
   ball.quaternion.identity();
   tilt.x = tilt.z = tilt.tx = tilt.tz = 0;
+  tilt.hold = false;
   board.rotation.set(0, 0, 0);
   won = false;
+  falling = false;
+  fall.active = false;
+  fall.t = 0;
+  if (contactShadow) {
+    contactShadow.visible = true;
+    contactShadow.position.set(pos.x, 0.003, pos.z);
+  }
 }
 
 // ---------- physics ----------
@@ -669,6 +811,7 @@ function collideWalls() {
 }
 
 function physicsStep(dt) {
+  if (fall.active || falling) return;
   // gravity in board space from current visual tilt
   vel.x += G * Math.sin(tilt.z) * dt;
   vel.z += -G * Math.sin(tilt.x) * dt;
@@ -688,12 +831,82 @@ function physicsStep(dt) {
   pos.x += vel.x * dt;
   pos.z += vel.z * dt;
   collideWalls();
+  checkFall();
 
   const sp3 = Math.hypot(vel.x, vel.z);
   if (sp3 > 1e-5) {
     tmpAxis.set(vel.z, 0, -vel.x).normalize();
     tmpQ.setFromAxisAngle(tmpAxis, (sp3 / RADIUS) * dt);
     ball.quaternion.premultiply(tmpQ);
+  }
+}
+
+function inGap(side, along) {
+  for (const g of gaps) {
+    if (g.side === side && along >= g.min && along <= g.max) return true;
+  }
+  return false;
+}
+
+function checkFall() {
+  if (falling || fall.active || won || !playing) return;
+  const { hw, hd } = boardExtent();
+  if (pos.z < -hd) { if (inGap('n', pos.x)) beginFall(); }
+  else if (pos.z > hd) { if (inGap('s', pos.x)) beginFall(); }
+  else if (pos.x < -hw) { if (inGap('w', pos.z)) beginFall(); }
+  else if (pos.x > hw) { if (inGap('e', pos.z)) beginFall(); }
+}
+
+function beginFall() {
+  falling = true;
+  playing = false;
+  fall.active = true;
+  fall.t = 0;
+  board.updateMatrixWorld(true);
+  ball.getWorldPosition(fall.startPos);
+  tmpV.set(vel.x, 0, vel.z).applyQuaternion(board.quaternion);
+  fall.startVel.copy(tmpV);
+  ball.getWorldQuaternion(fall.startQuat);
+  scene.add(ball);
+  ball.position.copy(fall.startPos);
+  ball.quaternion.copy(fall.startQuat);
+  if (contactShadow) contactShadow.visible = false;
+}
+
+function updateFall(dt) {
+  if (!fall.active) return;
+  fall.t += dt;
+  const u = Math.min(1, fall.t / fall.dur);
+  const ease = u * u;
+  const p = tmpV.copy(fall.startPos);
+  p.x += fall.startVel.x * fall.t;
+  p.z += fall.startVel.z * fall.t;
+  p.y += fall.startVel.y * fall.t - 0.5 * 8.8 * fall.t * fall.t - ease * 1.4;
+  ball.position.copy(p);
+  const s = Math.max(0.05, 1 - ease * 0.93);
+  ball.scale.setScalar(s);
+  ball.rotateOnWorldAxis(tmpAxis.set(0.35, 0.2, 0.9).normalize(), dt * 3.2);
+  if (u >= 1) finishFall();
+}
+
+function finishFall() {
+  fall.active = false;
+  falling = false;
+  lives = Math.max(0, lives - 1);
+  updateLivesHUD();
+  ball.scale.setScalar(1);
+  board.add(ball);
+  if (lives <= 0) {
+    showGameOver();
+  } else {
+    resetBall();
+    playing = true;
+    startTime = performance.now();
+    elapsed = 0;
+    timeLabel.textContent = '0.0 秒';
+    hintEl.textContent = '剩余生命 ' + lives + ' · 从起点再出发';
+    hintEl.style.opacity = '1';
+    hintTimer = 2.2;
   }
 }
 
@@ -894,19 +1107,23 @@ function startPlay() {
   resetBall();
   playing = true;
   won = false;
+  gameOver = false;
   startTime = performance.now();
   elapsed = 0;
+  timeLabel.textContent = '0.0 秒';
   hideOverlay();
+  updateLivesHUD();
   const gyro = device.listening || device.enabled;
   calBtn.style.display = gyro ? 'block' : 'none';
   hintEl.style.opacity = '1';
   hintEl.textContent = gyro
-    ? '倾斜手机控制木盒 · 可点「校准水平」'
-    : '方向键 / WASD 或拖动屏幕来倾斜木盒';
+    ? '倾斜手机，避开开口 · 点「校准水平」'
+    : '方向键 / WASD 或拖动屏幕 · 避开外墙开口';
   hintTimer = 3.2;
 }
 
 function showWin() {
+  document.getElementById('cardTitle').textContent = '走出迷宫';
   cardSub.textContent = '小球到达金色出口';
   cardStat.hidden = false;
   cardStat.textContent = '用时 ' + elapsed.toFixed(1) + ' 秒';
@@ -917,12 +1134,28 @@ function showWin() {
   showOverlay();
 }
 
+function showGameOver() {
+  gameOver = true;
+  playing = false;
+  document.getElementById('cardTitle').textContent = '游戏结束';
+  cardSub.textContent = '生命用尽，掉入了无尽星空';
+  cardStat.hidden = false;
+  cardStat.textContent = '到达第 ' + level + ' 关';
+  startBtn.textContent = '重新开始';
+  nextBtn.hidden = true;
+  calBtn.style.display = 'none';
+  showOverlay();
+}
+
 startBtn.addEventListener('click', async () => {
   const gyro = await enableGyro();
-  if (!playing || won) {
-    if (won) {
-      // replay current level
-    }
+  if (gameOver) {
+    lives = MAX_LIVES;
+    gameOver = false;
+    buildLevel(level);
+    startPlay();
+  } else if (!playing || won) {
+    if (!won) lives = MAX_LIVES;
     startPlay();
   }
   if (!gyro && !device.enabled && isTouchPhone()) {
@@ -961,7 +1194,9 @@ function frame(now) {
   board.rotation.z = tilt.z;
 
   frameCount++;
-  if (playing && !won) {
+  if (fall.active) {
+    updateFall(dt);
+  } else if (playing && !won) {
     let acc = dt;
     while (acc > 0) {
       const s = Math.min(SUB_DT, acc);
@@ -969,11 +1204,14 @@ function frame(now) {
       physSteps++;
       acc -= s;
     }
-    pos.y = RADIUS;
-    ball.position.copy(pos);
-    elapsed = (now - startTime) / 1000;
-    timeLabel.textContent = elapsed.toFixed(1) + ' 秒';
-    checkWin();
+    if (!fall.active) {
+      pos.y = RADIUS;
+      ball.position.copy(pos);
+      if (contactShadow) contactShadow.position.set(pos.x, 0.003, pos.z);
+      elapsed = (now - startTime) / 1000;
+      timeLabel.textContent = elapsed.toFixed(1) + ' 秒';
+      checkWin();
+    }
   }
 
   if (hintTimer > 0) {
@@ -993,20 +1231,43 @@ window.__maze = {
   getState() {
     return {
       playing, won, level, cols, rows,
-      ball: { x: pos.x, y: pos.y, z: pos.z },
+      ball: fall.active
+        ? { x: ball.position.x, y: ball.position.y, z: ball.position.z, world: true }
+        : { x: pos.x, y: pos.y, z: pos.z },
+
       vel: { x: vel.x, z: vel.z },
       tilt: { x: tilt.x, z: tilt.z },
       start: { x: startPos.x, z: startPos.z },
       exit: { x: exitPos.x, z: exitPos.z },
       walls: wallBoxes.length,
       elapsed, frameCount, physSteps, keys: { ...keys },
-      maxTilt: MAX_TILT, tiltHold: !!tilt.hold
+      maxTilt: MAX_TILT, tiltHold: !!tilt.hold,
+      lives, falling: fall.active, gameOver, won,
+      gaps: gaps.map((g) => ({ side: g.side, min: g.min, max: g.max })),
+      gapWidth: gapWidthFor(level)
     };
   },
   startPlay,
   buildLevel,
+  setLives(n) { lives = n; updateLivesHUD(); },
   setTilt(x, z) { tilt.hold = true; tilt.tx = x; tilt.tz = z; keys.n = keys.s = keys.e = keys.w = false; },
   press(dir, down = true) { tilt.hold = false; if (keys[dir] !== undefined) keys[dir] = down; },
+  placeAtGap() {
+    if (!gaps.length) return null;
+    const g = gaps[0];
+    const { hw, hd } = boardExtent();
+    const mid = (g.min + g.max) * 0.5;
+    vel.set(0, 0, 0);
+    const inset = 0.05;
+    const speed = 2.2;
+    if (g.side === 'n') { pos.set(mid, RADIUS, -hd + inset); vel.z = -speed; }
+    else if (g.side === 's') { pos.set(mid, RADIUS, hd - inset); vel.z = speed; }
+    else if (g.side === 'w') { pos.set(-hw + inset, RADIUS, mid); vel.x = -speed; }
+    else { pos.set(hw - inset, RADIUS, mid); vel.x = speed; }
+    ball.position.copy(pos);
+    if (contactShadow) contactShadow.position.set(pos.x, 0.003, pos.z);
+    return { side: g.side, min: g.min, max: g.max, pos: { x: pos.x, z: pos.z } };
+  },
   penetrating() {
     const r = RADIUS * 0.92;
     let n = 0;
@@ -1047,7 +1308,9 @@ window.__maze = {
       tilt.z = damp(tilt.z, tilt.tz, 11, dt);
       board.rotation.x = tilt.x;
       board.rotation.z = tilt.z;
-      if (playing && !won) {
+      if (fall.active) {
+        updateFall(dt);
+      } else if (playing && !won) {
         let acc = dt;
         while (acc > 0) {
           const s = Math.min(SUB_DT, acc);
@@ -1055,10 +1318,13 @@ window.__maze = {
           physSteps++;
           acc -= s;
         }
-        pos.y = RADIUS;
-        ball.position.copy(pos);
-        elapsed += dt;
-        checkWin();
+        if (!fall.active) {
+          pos.y = RADIUS;
+          ball.position.copy(pos);
+          if (contactShadow) contactShadow.position.set(pos.x, 0.003, pos.z);
+          elapsed += dt;
+          checkWin();
+        }
       }
       t -= dt;
     }
