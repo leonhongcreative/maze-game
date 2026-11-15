@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="screen-orientation" content="portrait" />
+<title>木盒迷宫</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #05040c;
+    position: fixed; inset: 0;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  canvas { display: block; touch-action: none; outline: none; width: 100%; height: 100%; }
+  .ui {
+    font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 0;
+    color: #f6eadc; pointer-events: none; z-index: 5;
+    text-shadow: 0 1px 8px rgba(0,0,0,.55);
+  }
+  #hud .title { font-weight: 650; font-size: 15px; letter-spacing: .06em; }
+  #hud .title small { display: block; font-weight: 400; opacity: .7; font-size: 12px; margin-top: 2px; letter-spacing: .02em; }
+  #hud .time { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; padding-top: 1px; }
+  #calibrate {
+    position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 5; pointer-events: auto;
+    background: rgba(40,24,14,.55); color: #f6eadc;
+    border: 1px solid rgba(246,234,220,.28); border-radius: 18px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    display: none;
+  }
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    text-align: center; color: rgba(246,234,220,.82); font-size: 13px;
+    text-shadow: 0 1px 6px rgba(0,0,0,.65); pointer-events: none; z-index: 5;
+    padding: 0 108px 0 16px; transition: opacity .6s;
+  }
+  #overlay {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(12,8,5,.55);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    padding: 24px;
+  }
+  #overlay.hidden { display: none; }
+  .card {
+    width: min(92vw, 380px);
+    background: linear-gradient(180deg, rgba(72,42,24,.92), rgba(36,22,12,.94));
+    border: 1px solid rgba(246,234,220,.22);
+    border-radius: 20px;
+    padding: 28px 24px 22px;
+    color: #f6eadc;
+    text-align: center;
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  }
+  .card h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .12em; font-weight: 700; }
+  .card .sub { margin: 0 0 22px; font-size: 14px; line-height: 1.6; opacity: .8; }
+  .card .stat { font-size: 22px; font-weight: 650; margin: 6px 0 20px; font-variant-numeric: tabular-nums; }
+  .btn {
+    display: block; width: 100%;
+    appearance: none; border: 0; cursor: pointer;
+    background: linear-gradient(180deg, #e8b060, #c4842e);
+    color: #2a1608; font-weight: 700; font-size: 16px;
+    padding: 13px 16px; border-radius: 14px;
+    box-shadow: 0 4px 0 #8a5a18, 0 8px 20px rgba(0,0,0,.28);
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #8a5a18, 0 4px 12px rgba(0,0,0,.28); }
+  [hidden] { display: none !important; }
+  .btn.ghost {
+    margin-top: 10px;
+    background: transparent; color: #f6eadc;
+    border: 1px solid rgba(246,234,220,.3);
+    box-shadow: none; font-weight: 600;
+  }
+  @media (max-width: 420px) {
+    #hud .title { font-size: 13px; }
+    #hud .time { font-size: 16px; }
+    .card h1 { font-size: 22px; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud" class="ui">
+  <div class="title">木盒迷宫<small id="levelLabel">第 1 关</small></div>
+  <div class="time" id="timeLabel">0.0 秒</div>
+</div>
+<button class="ui" id="calibrate">校准水平</button>
+<div id="hint" class="ui">倾斜手机，让金属小球滚向出口</div>
+<div id="overlay" class="ui">
+  <div class="card" id="card">
+    <h1>木盒迷宫</h1>
+    <p class="sub" id="cardSub">倾斜手机，控制金属小球滚出木质迷宫。<br>首次需允许访问陀螺仪；桌面可用方向键或拖动屏幕。</p>
+    <div class="stat" id="cardStat" hidden></div>
+    <button class="btn" id="startBtn">开始游戏 / 启用陀螺仪</button>
+    <button class="btn ghost" id="nextBtn" hidden>下一关（更大迷宫）</button>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* --------------------------------------------------------------------------
+ * 设备倾斜输入适配器
+ * 当前：浏览器 DeviceOrientationEvent
+ *   - iOS 必须在用户手势里调用 DeviceOrientationEvent.requestPermission()
+ *   - 页面必须通过 HTTPS 访问（可用 GitHub Pages 等托管）
+ *   - 微信 iOS 内置浏览器同样支持，前提也是 HTTPS + 用户手势授权
+ * 微信小游戏日后可替换为：
+ *   wx.startDeviceMotionListening({ interval: 'game' })
+ *   wx.onDeviceMotionChange(({ alpha, beta, gamma }) => applyDeviceTilt(beta, gamma))
+ *   wx.stopDeviceMotionListening()
+ * 两边都提供 beta（前后，度）/ gamma（左右，度），下面的校准、死区、平滑与映射可原样复用。
+ * -------------------------------------------------------------------------- */
+
+const clamp = THREE.MathUtils.clamp;
+const degToRad = THREE.MathUtils.degToRad;
+const damp = (c, t, l, dt) => c + (t - c) * (1 - Math.exp(-l * dt));
+
+// ---------- renderer / scene / camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05040c);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 80);
+scene.add(camera);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+pmrem.dispose();
+
+const hemi = new THREE.HemisphereLight(0xc8d4f0, 0x12101c, 0.42);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffe0b0, 2.15);
+key.position.set(4.5, 8.5, 3.2);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.near = 1;
+key.shadow.camera.far = 28;
+key.shadow.bias = -0.0008;
+key.shadow.normalBias = 0.03;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x7a8cb8, 0.32);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0x6a7fb8, 0.28);
+rim.position.set(-3.2, 2.2, -5.5);
+scene.add(rim);
+
+// Blurred deep-space backdrop (procedural shader skybox, no external assets).
+// Sit at the far plane so the tilting box never clips against it.
+const spaceMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  depthTest: false,
+  fog: false,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize(position);
+      mat4 viewRot = mat4(mat3(modelViewMatrix));
+      vec4 clip = projectionMatrix * viewRot * vec4(position, 1.0);
+      gl_Position = clip.xyww;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform float uTime;
+    varying vec3 vDir;
+
+    float hash13(vec3 p) {
+      p = fract(p * 0.1031);
+      p += dot(p, p.yzx + 33.33);
+      return fract((p.x + p.y) * p.z);
+    }
+    float vnoise(vec3 p) {
+      vec3 i = floor(p);
+      vec3 f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      float n000 = hash13(i);
+      float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
+      float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
+      float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
+      float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
+      float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
+      float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
+      float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
+      float nx00 = mix(n000, n100, f.x);
+      float nx10 = mix(n010, n110, f.x);
+      float nx01 = mix(n001, n101, f.x);
+      float nx11 = mix(n011, n111, f.x);
+      return mix(mix(nx00, nx10, f.y), mix(nx01, nx11, f.y), f.z);
+    }
+    float fbm(vec3 p) {
+      float a = 0.0, w = 0.5;
+      for (int i = 0; i < 5; i++) {
+        a += w * vnoise(p);
+        p = p * 2.07 + 1.37;
+        w *= 0.5;
+      }
+      return a;
+    }
+    mat2 rot(float a) {
+      float c = cos(a), s = sin(a);
+      return mat2(c, -s, s, c);
+    }
+    vec3 softStars(vec3 dir, float density, float radius, float bright) {
+      vec3 p = dir * density;
+      vec3 i0 = floor(p);
+      vec3 acc = vec3(0.0);
+      for (int z = -1; z <= 1; z++)
+      for (int y = -1; y <= 1; y++)
+      for (int x = -1; x <= 1; x++) {
+        vec3 cell = i0 + vec3(float(x), float(y), float(z));
+        float h = hash13(cell);
+        if (h > 0.9) {
+          vec3 sp = cell + vec3(hash13(cell + 1.1), hash13(cell + 2.3), hash13(cell + 3.7));
+          float d = length(p - sp);
+          float s = exp(-d * d / max(radius * radius, 1e-5));
+          vec3 tint = mix(vec3(0.65, 0.82, 1.0), vec3(1.0, 0.9, 0.72), hash13(cell + 9.0));
+          acc += tint * s * bright * (0.45 + h);
+        }
+      }
+      return acc;
+    }
+
+    void main() {
+      vec3 d = normalize(vDir);
+      float t = uTime * 0.008;
+      vec3 d1 = d;
+      d1.xz = rot(t) * d1.xz;
+      vec3 d2 = d;
+      d2.xy = rot(t * 0.55 + 0.4) * d2.xy;
+
+      float n  = fbm(d1 * 2.15);
+      float n2 = fbm(d2 * 3.8 + 8.0);
+      float n3 = fbm(d1 * 1.05 + n * 0.85);
+
+      vec3 col = vec3(0.010, 0.012, 0.028);
+      col += vec3(0.16, 0.045, 0.20) * smoothstep(0.42, 0.88, n3) * 0.75;
+      col += vec3(0.02, 0.10, 0.16) * smoothstep(0.38, 0.82, n2) * 0.55;
+      col += vec3(0.12, 0.035, 0.04) * smoothstep(0.55, 0.92, n) * 0.40;
+      col *= 0.50 + 0.50 * smoothstep(0.18, 0.72, n2);
+
+      col += softStars(d1, 28.0, 0.42, 0.55);
+      col += softStars(d2, 64.0, 0.22, 0.70);
+      col += softStars(d1.yzx, 130.0, 0.10, 0.40);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const spaceMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), spaceMat);
+spaceMesh.name = 'space';
+spaceMesh.frustumCulled = false;
+spaceMesh.renderOrder = -1000;
+scene.add(spaceMesh);
+
+const board = new THREE.Group();
+board.name = 'board';
+scene.add(board);
+
+// ---------- wood textures ----------
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function noise2(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y) {
+  let a = 0, amp = 0.5, f = 1;
+  for (let i = 0; i < 5; i++) { a += amp * noise2(x * f, y * f); f *= 2; amp *= 0.5; }
+  return a;
+}
+function makeWoodTexture({ w = 512, h = 512, c0 = [0x8b, 0x57, 0x2e], c1 = [0x4a, 0x2a, 0x14], rings = 14, repeatX = 1, repeatY = 1, straight = false } = {}) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = x / w, ny = y / h;
+      const n = fbm(nx * (straight ? 2.2 : 6), ny * (straight ? 28 : 18));
+      const n2 = fbm(nx * (straight ? 8 : 22), ny * (straight ? 40 : 3.5));
+      const wave = Math.sin((nx * rings + n * (straight ? 0.7 : 2.4) + ny * (straight ? 0.08 : 0.4)) * Math.PI * 2) * 0.5 + 0.5;
+      const v = clamp(wave * 0.72 + n2 * 0.22 + 0.12, 0, 1);
+      const i = (y * w + x) * 4;
+      d[i]     = clamp(c0[0] + (c1[0] - c0[0]) * (1 - v) * 0.85 + (n - 0.5) * 18, 0, 255) | 0;
+      d[i + 1] = clamp(c0[1] + (c1[1] - c0[1]) * (1 - v) * 0.85 + (n - 0.5) * 12, 0, 255) | 0;
+      d[i + 2] = clamp(c0[2] + (c1[2] - c0[2]) * (1 - v) * 0.85 + (n - 0.5) * 8, 0, 255) | 0;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  tex.repeat.set(repeatX, repeatY);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const floorMap = makeWoodTexture({ c0: [0xa0, 0x6c, 0x3c], c1: [0x5a, 0x34, 0x18], rings: 8, repeatX: 2, repeatY: 2, straight: true });
+const wallMap  = makeWoodTexture({ c0: [0x8d, 0x56, 0x2c], c1: [0x3e, 0x22, 0x10], rings: 16, repeatX: 1, repeatY: 1 });
+const frameMap = makeWoodTexture({ c0: [0x7a, 0x48, 0x24], c1: [0x32, 0x1a, 0x0c], rings: 9,  repeatX: 2, repeatY: 1 });
+
+const floorMat = new THREE.MeshStandardMaterial({ map: floorMap, roughness: 0.62, metalness: 0.04, color: 0xffffff });
+const wallMat  = new THREE.MeshStandardMaterial({ map: wallMap,  roughness: 0.58, metalness: 0.05, color: 0xffffff });
+const frameMat = new THREE.MeshStandardMaterial({ map: frameMap, roughness: 0.55, metalness: 0.06, color: 0xffffff });
+const ballMat  = new THREE.MeshPhysicalMaterial({
+  color: 0xd8dee6,
+  metalness: 1,
+  roughness: 0.08,
+  envMapIntensity: 1.35,
+  clearcoat: 0.55,
+  clearcoatRoughness: 0.12,
+  reflectivity: 1
+});
+const startMat = new THREE.MeshStandardMaterial({ color: 0x3d8f5a, emissive: 0x145c32, emissiveIntensity: 0.55, roughness: 0.45, metalness: 0.1 });
+const exitMat  = new THREE.MeshStandardMaterial({ color: 0xe8b14a, emissive: 0xc47a16, emissiveIntensity: 0.85, roughness: 0.35, metalness: 0.35 });
+
+// ---------- maze generation (recursive backtracker) ----------
+function generateMaze(cols, rows) {
+  const cells = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => ({ n: true, s: true, e: true, w: true }))
+  );
+  const vis = Array.from({ length: rows }, () => Array(cols).fill(false));
+  const stack = [[0, 0]];
+  vis[0][0] = true;
+  const dirs = [
+    [0, -1, 'n', 's'],
+    [0,  1, 's', 'n'],
+    [1,  0, 'e', 'w'],
+    [-1, 0, 'w', 'e']
+  ];
+  while (stack.length) {
+    const [x, y] = stack[stack.length - 1];
+    const opts = [];
+    for (const [dx, dy, a, b] of dirs) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < cols && ny < rows && !vis[ny][nx]) opts.push([nx, ny, a, b]);
+    }
+    if (!opts.length) { stack.pop(); continue; }
+    const [nx, ny, a, b] = opts[(Math.random() * opts.length) | 0];
+    cells[y][x][a] = false;
+    cells[ny][nx][b] = false;
+    vis[ny][nx] = true;
+    stack.push([nx, ny]);
+  }
+  return cells;
+}
+
+// ---------- constants & state ----------
+const CELL = 0.72;
+const WALL_T = 0.11;
+const WALL_H = 0.34;
+const FRAME_W = 0.28;
+const FLOOR_Y = 0;
+const FLOOR_T = 0.08;
+const RADIUS = 0.13;
+const G = 19;
+const FRICTION = 1.15;
+const RESTITUTION = 0.32;
+const MAX_SPEED = 6.2;
+const SUB_DT = 1 / 120;
+const MAX_TILT = degToRad(15);
+const DEAD_ZONE = 1.4; // degrees
+const TILT_SENS = 0.85;
+
+let level = 1;
+let cols = 7, rows = 7;
+let wallBoxes = []; // {minX,maxX,minZ,maxZ}
+let startPos = new THREE.Vector3();
+let exitPos = new THREE.Vector3();
+let mazeRoot = null;
+let ball = null;
+
+const pos = new THREE.Vector3();
+const vel = new THREE.Vector3();
+const tilt = { x: 0, z: 0, tx: 0, tz: 0, hold: false };
+const keys = { n: false, s: false, e: false, w: false };
+const drag = { active: false, sx: 0, sy: 0, x: 0, z: 0 };
+
+const device = {
+  enabled: false,
+  listening: false,
+  hasEvent: false,
+  rawBeta: 0,
+  rawGamma: 0,
+  calBeta: 0,
+  calGamma: 0,
+  needCal: true,
+  smBeta: 0,
+  smGamma: 0
+};
+
+let playing = false;
+let won = false;
+let startTime = 0;
+let elapsed = 0;
+let hintTimer = 0;
+let frameCount = 0;
+let physSteps = 0;
+
+const tmpAxis = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+const tmpV = new THREE.Vector3();
+
+function sizeForLevel(lv) {
+  return Math.min(7 + (lv - 1) * 2, 15);
+}
+
+function cellCenter(i, j) {
+  const ox = (cols - 1) * CELL * 0.5;
+  const oz = (rows - 1) * CELL * 0.5;
+  return new THREE.Vector3(i * CELL - ox, RADIUS, j * CELL - oz);
+}
+
+function addBox(minX, maxX, minZ, maxZ) {
+  wallBoxes.push({ minX, maxX, minZ, maxZ });
+}
+
+// ---------- build / rebuild maze ----------
+function clearMaze() {
+  if (mazeRoot) {
+    board.remove(mazeRoot);
+    mazeRoot.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+    });
+  }
+  wallBoxes = [];
+  mazeRoot = new THREE.Group();
+  board.add(mazeRoot);
+}
+
+function buildLevel(lv) {
+  clearMaze();
+  level = lv;
+  cols = rows = sizeForLevel(lv);
+  const cells = generateMaze(cols, rows);
+  const ox = (cols - 1) * CELL * 0.5;
+  const oz = (rows - 1) * CELL * 0.5;
+  const boardW = cols * CELL + FRAME_W * 2;
+  const boardD = rows * CELL + FRAME_W * 2;
+
+  // floor
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(boardW - 0.02, FLOOR_T, boardD - 0.02), floorMat);
+  floor.position.y = -FLOOR_T * 0.5;
+  floor.receiveShadow = true;
+  mazeRoot.add(floor);
+
+  // outer wooden frame (tray lip)
+  const lipH = WALL_H + 0.06;
+  const segs = [
+    { x: 0, z: -(rows * CELL) * 0.5 - FRAME_W * 0.5, sx: boardW, sz: FRAME_W },
+    { x: 0, z:  (rows * CELL) * 0.5 + FRAME_W * 0.5, sx: boardW, sz: FRAME_W },
+    { x: -(cols * CELL) * 0.5 - FRAME_W * 0.5, z: 0, sx: FRAME_W, sz: rows * CELL },
+    { x:  (cols * CELL) * 0.5 + FRAME_W * 0.5, z: 0, sx: FRAME_W, sz: rows * CELL }
+  ];
+  for (const s of segs) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(s.sx, lipH, s.sz), frameMat);
+    m.position.set(s.x, lipH * 0.5, s.z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    mazeRoot.add(m);
+    addBox(s.x - s.sx * 0.5, s.x + s.sx * 0.5, s.z - s.sz * 0.5, s.z + s.sz * 0.5);
+  }
+  // underside slab so the tray looks solid when tilted
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(boardW, 0.1, boardD), frameMat);
+  slab.position.y = -FLOOR_T - 0.05;
+  slab.receiveShadow = true;
+  mazeRoot.add(slab);
+
+  // inner walls as instanced boxes
+  const wallSpecs = [];
+  const seen = new Set();
+  function wallKey(x, z, sx, sz) {
+    return [x.toFixed(3), z.toFixed(3), sx.toFixed(3), sz.toFixed(3)].join('|');
+  }
+  function addWall(x, z, sx, sz) {
+    const k = wallKey(x, z, sx, sz);
+    if (seen.has(k)) return;
+    seen.add(k);
+    wallSpecs.push({ x, z, sx, sz });
+    addBox(x - sx * 0.5, x + sx * 0.5, z - sz * 0.5, z + sz * 0.5);
+  }
+
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const cx = i * CELL - ox;
+      const cz = j * CELL - oz;
+      const c = cells[j][i];
+      // walls sit on cell edges; length covers the passage plus a bit to close corners
+      const len = CELL + WALL_T * 0.02;
+      if (c.n) addWall(cx, cz - CELL * 0.5, len, WALL_T);
+      if (c.s) addWall(cx, cz + CELL * 0.5, len, WALL_T);
+      if (c.w) addWall(cx - CELL * 0.5, cz, WALL_T, len);
+      if (c.e) addWall(cx + CELL * 0.5, cz, WALL_T, len);
+    }
+  }
+
+  const wallGeom = new THREE.BoxGeometry(1, WALL_H, 1);
+  const wallMesh = new THREE.InstancedMesh(wallGeom, wallMat, wallSpecs.length);
+  wallMesh.castShadow = true;
+  wallMesh.receiveShadow = true;
+  const dummy = new THREE.Object3D();
+  wallSpecs.forEach((s, i) => {
+    dummy.position.set(s.x, WALL_H * 0.5, s.z);
+    dummy.scale.set(s.sx, 1, s.sz);
+    dummy.updateMatrix();
+    wallMesh.setMatrixAt(i, dummy.matrix);
+  });
+  wallMesh.instanceMatrix.needsUpdate = true;
+  mazeRoot.add(wallMesh);
+
+  startPos.copy(cellCenter(0, 0));
+  exitPos.copy(cellCenter(cols - 1, rows - 1));
+
+  const startPad = new THREE.Mesh(new THREE.CylinderGeometry(CELL * 0.28, CELL * 0.28, 0.016, 24), startMat);
+  startPad.position.set(startPos.x, 0.009, startPos.z);
+  startPad.receiveShadow = true;
+  mazeRoot.add(startPad);
+
+  const exitPad = new THREE.Mesh(new THREE.CylinderGeometry(CELL * 0.30, CELL * 0.30, 0.02, 24), exitMat);
+  exitPad.position.set(exitPos.x, 0.01, exitPos.z);
+  exitPad.receiveShadow = true;
+  mazeRoot.add(exitPad);
+  const exitRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CELL * 0.30, 0.012, 8, 24),
+    new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb040, emissiveIntensity: 0.7, roughness: 0.4, metalness: 0.4 })
+  );
+  exitRing.rotation.x = Math.PI / 2;
+  exitRing.position.set(exitPos.x, 0.02, exitPos.z);
+  mazeRoot.add(exitRing);
+  const exitLight = new THREE.PointLight(0xffc060, 0.7, 1.6);
+  exitLight.position.set(exitPos.x, 0.35, exitPos.z);
+  mazeRoot.add(exitLight);
+
+  if (!ball) {
+    ball = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 32, 24), ballMat);
+    ball.castShadow = true;
+    board.add(ball);
+  }
+  resetBall();
+  fitCamera();
+  updateShadowCamera(boardW);
+
+  document.getElementById('levelLabel').textContent = '第 ' + level + ' 关 · ' + cols + '×' + rows;
+}
+
+function updateShadowCamera(boardW) {
+  const s = boardW * 0.7 + 1.2;
+  const cam = key.shadow.camera;
+  cam.left = -s; cam.right = s; cam.top = s; cam.bottom = -s;
+  cam.updateProjectionMatrix();
+  key.position.set(s * 0.55, s * 1.15, s * 0.4);
+}
+
+function fitCamera() {
+  const aspect = innerWidth / innerHeight;
+  camera.aspect = aspect;
+  const boardW = cols * CELL + FRAME_W * 2;
+  camera.fov = aspect < 0.72 ? 50 : 42;
+  const half = boardW * 0.55;
+  const vFit = half / Math.tan(degToRad(camera.fov * 0.5));
+  const hFit = half / Math.tan(degToRad(camera.fov * 0.5)) / aspect;
+  const dist = Math.max(vFit, hFit) * 1.05;
+  camera.position.set(0, dist * 0.94, dist * 0.28);
+  camera.lookAt(0, 0, 0.02);
+  camera.near = 0.05;
+  camera.far = dist * 5;
+  camera.updateProjectionMatrix();
+}
+
+function resetBall() {
+  pos.copy(startPos);
+  vel.set(0, 0, 0);
+  ball.position.copy(pos);
+  ball.quaternion.identity();
+  tilt.x = tilt.z = tilt.tx = tilt.tz = 0;
+  board.rotation.set(0, 0, 0);
+  won = false;
+}
+
+// ---------- physics ----------
+function collideWalls() {
+  const r = RADIUS * 0.98;
+  for (let n = 0; n < 3; n++) {
+    let hit = false;
+    for (const b of wallBoxes) {
+      const cx = clamp(pos.x, b.minX, b.maxX);
+      const cz = clamp(pos.z, b.minZ, b.maxZ);
+      let dx = pos.x - cx, dz = pos.z - cz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= r * r) {
+        // fully inside a thick wall (rare, after a teleport) — handled below if d2==0 and inside
+        if (pos.x > b.minX && pos.x < b.maxX && pos.z > b.minZ && pos.z < b.maxZ) {
+          const left = pos.x - b.minX, right = b.maxX - pos.x;
+          const top = pos.z - b.minZ, bot = b.maxZ - pos.z;
+          const m = Math.min(left, right, top, bot);
+          if (m === left) { pos.x = b.minX - r; if (vel.x > 0) vel.x = -vel.x * RESTITUTION; }
+          else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) vel.x = -vel.x * RESTITUTION; }
+          else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) vel.z = -vel.z * RESTITUTION; }
+          else { pos.z = b.maxZ + r; if (vel.z < 0) vel.z = -vel.z * RESTITUTION; }
+          hit = true;
+        }
+        continue;
+      }
+      if (d2 < 1e-12) {
+        const left = pos.x - b.minX, right = b.maxX - pos.x;
+        const top = pos.z - b.minZ, bot = b.maxZ - pos.z;
+        const m = Math.min(left, right, top, bot);
+        if (m === left) { pos.x = b.minX - r; if (vel.x > 0) vel.x = -vel.x * RESTITUTION; }
+        else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) vel.x = -vel.x * RESTITUTION; }
+        else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) vel.z = -vel.z * RESTITUTION; }
+        else { pos.z = b.maxZ + r; if (vel.z < 0) vel.z = -vel.z * RESTITUTION; }
+        hit = true;
+        continue;
+      }
+      const d = Math.sqrt(d2);
+      const nx = dx / d, nz = dz / d;
+      const pen = r - d;
+      pos.x += nx * pen;
+      pos.z += nz * pen;
+      const vn = vel.x * nx + vel.z * nz;
+      if (vn < 0) {
+        vel.x -= (1 + RESTITUTION) * vn * nx;
+        vel.z -= (1 + RESTITUTION) * vn * nz;
+      }
+      hit = true;
+    }
+    if (!hit) break;
+  }
+}
+
+function physicsStep(dt) {
+  // gravity in board space from current visual tilt
+  vel.x += G * Math.sin(tilt.z) * dt;
+  vel.z += -G * Math.sin(tilt.x) * dt;
+
+  const sp = Math.hypot(vel.x, vel.z);
+  if (sp > 1e-6) {
+    const ns = Math.max(0, sp - FRICTION * dt);
+    vel.x *= ns / sp;
+    vel.z *= ns / sp;
+  }
+  const sp2 = Math.hypot(vel.x, vel.z);
+  if (sp2 > MAX_SPEED) {
+    vel.x *= MAX_SPEED / sp2;
+    vel.z *= MAX_SPEED / sp2;
+  }
+
+  pos.x += vel.x * dt;
+  pos.z += vel.z * dt;
+  collideWalls();
+
+  const sp3 = Math.hypot(vel.x, vel.z);
+  if (sp3 > 1e-5) {
+    tmpAxis.set(vel.z, 0, -vel.x).normalize();
+    tmpQ.setFromAxisAngle(tmpAxis, (sp3 / RADIUS) * dt);
+    ball.quaternion.premultiply(tmpQ);
+  }
+}
+
+function checkWin() {
+  const dx = pos.x - exitPos.x, dz = pos.z - exitPos.z;
+  if (dx * dx + dz * dz < (CELL * 0.26) * (CELL * 0.26)) {
+    won = true;
+    playing = false;
+    elapsed = (performance.now() - startTime) / 1000;
+    showWin();
+  }
+}
+
+// ---------- controls ----------
+function applyDeviceTilt(beta, gamma) {
+  device.hasEvent = true;
+  device.rawBeta = beta || 0;
+  device.rawGamma = gamma || 0;
+  if (device.needCal) {
+    device.calBeta = device.rawBeta;
+    device.calGamma = device.rawGamma;
+    device.smBeta = device.rawBeta;
+    device.smGamma = device.rawGamma;
+    device.needCal = false;
+  }
+}
+
+function calibrate() {
+  device.calBeta = device.rawBeta;
+  device.calGamma = device.rawGamma;
+  device.needCal = false;
+}
+
+function onOrientation(e) {
+  if (e.beta == null || e.gamma == null) return;
+  if (!device.enabled) {
+    device.enabled = true;
+    if (playing) {
+      calBtn.style.display = 'block';
+      hintEl.textContent = '倾斜手机控制木盒 · 可点「校准水平」';
+      hintEl.style.opacity = '1';
+      hintTimer = 3.2;
+    }
+  }
+  applyDeviceTilt(e.beta, e.gamma);
+}
+
+function updateTiltTargets(dt) {
+  // device
+  let dx = 0, dz = 0, fromDevice = false;
+  if (device.enabled && device.hasEvent) {
+    device.smBeta = damp(device.smBeta, device.rawBeta, 10, dt);
+    device.smGamma = damp(device.smGamma, device.rawGamma, 10, dt);
+    let db = device.smBeta - device.calBeta;
+    let dg = device.smGamma - device.calGamma;
+    const mag = Math.hypot(db, dg);
+    if (mag < DEAD_ZONE) { db = 0; dg = 0; }
+    else {
+      const s = (mag - DEAD_ZONE) / mag;
+      db *= s; dg *= s;
+    }
+    // 手机平放、屏幕朝上：右边缘下压（gamma>0）球向右；顶端下压（beta<0）球向上远离自己
+    dz = clamp(degToRad(dg) * TILT_SENS, -MAX_TILT, MAX_TILT);
+    dx = clamp(degToRad(-db) * TILT_SENS, -MAX_TILT, MAX_TILT);
+    fromDevice = true;
+  }
+
+  // keyboard / WASD
+  let kx = 0, kz = 0;
+  if (keys.n) kx += 1;
+  if (keys.s) kx -= 1;
+  if (keys.e) kz += 1;
+  if (keys.w) kz -= 1;
+  if (kx || kz) {
+    const len = Math.hypot(kx, kz) || 1;
+    kx /= len; kz /= len;
+    dx = kx * MAX_TILT;
+    dz = kz * MAX_TILT;
+    fromDevice = false;
+  } else if (drag.active) {
+    dx = drag.x;
+    dz = drag.z;
+    fromDevice = false;
+  } else if (tilt.hold) {
+    dx = tilt.tx;
+    dz = tilt.tz;
+    fromDevice = false;
+  } else if (!fromDevice) {
+    dx = 0; dz = 0;
+  }
+
+  tilt.tx = dx;
+  tilt.tz = dz;
+}
+
+function isTouchPhone() {
+  return /iPhone|iPad|iPod|Android|Mobile|MicroMessenger/i.test(navigator.userAgent || '');
+}
+
+async function enableGyro() {
+  let listen = false;
+  try {
+    const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    if (isiOS && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      listen = perm === 'granted';
+    } else if (isTouchPhone() && typeof DeviceOrientationEvent !== 'undefined') {
+      listen = true;
+    }
+  } catch (err) {
+    listen = false;
+  }
+  if (listen) {
+    device.listening = true;
+    device.needCal = true;
+    window.removeEventListener('deviceorientation', onOrientation, true);
+    window.addEventListener('deviceorientation', onOrientation, true);
+  }
+  return listen;
+}
+
+// keyboard
+const keyMap = {
+  ArrowUp: 'n', KeyW: 'n',
+  ArrowDown: 's', KeyS: 's',
+  ArrowLeft: 'w', KeyA: 'w',
+  ArrowRight: 'e', KeyD: 'e'
+};
+addEventListener('keydown', (e) => {
+  const k = keyMap[e.code];
+  if (!k) return;
+  keys[k] = true;
+  e.preventDefault();
+});
+addEventListener('keyup', (e) => {
+  const k = keyMap[e.code];
+  if (!k) return;
+  keys[k] = false;
+  e.preventDefault();
+});
+
+// mouse / touch drag (desktop & fallback)
+function pointerPos(e) {
+  if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+function onPointerDown(e) {
+  if (!playing || e.target.closest('button') || e.target.closest('#overlay')) return;
+  const p = pointerPos(e);
+  drag.active = true;
+  drag.sx = p.x; drag.sy = p.y;
+  drag.x = 0; drag.z = 0;
+}
+function onPointerMove(e) {
+  if (!drag.active) return;
+  const p = pointerPos(e);
+  const nx = (p.x - drag.sx) / Math.max(160, innerWidth * 0.28);
+  const ny = (p.y - drag.sy) / Math.max(160, innerHeight * 0.28);
+  drag.z = clamp(nx * MAX_TILT, -MAX_TILT, MAX_TILT);
+  drag.x = clamp(-ny * MAX_TILT, -MAX_TILT, MAX_TILT);
+}
+function onPointerUp() {
+  drag.active = false;
+  drag.x = 0; drag.z = 0;
+}
+const canvas = renderer.domElement;
+canvas.addEventListener('mousedown', onPointerDown);
+addEventListener('mousemove', onPointerMove);
+addEventListener('mouseup', onPointerUp);
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+addEventListener('touchmove', (e) => { if (playing) e.preventDefault(); onPointerMove(e); }, { passive: false });
+addEventListener('touchend', onPointerUp);
+addEventListener('touchcancel', onPointerUp);
+addEventListener('touchmove', (e) => { if (e.target === canvas || playing) e.preventDefault(); }, { passive: false });
+addEventListener('gesturestart', (e) => e.preventDefault());
+
+addEventListener('resize', () => {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  fitCamera();
+});
+try { screen.orientation?.lock?.('portrait').catch(() => {}); } catch (e) {}
+
+// ---------- UI / game flow ----------
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const nextBtn = document.getElementById('nextBtn');
+const cardSub = document.getElementById('cardSub');
+const cardStat = document.getElementById('cardStat');
+const timeLabel = document.getElementById('timeLabel');
+const hintEl = document.getElementById('hint');
+const calBtn = document.getElementById('calibrate');
+
+function hideOverlay() { overlay.classList.add('hidden'); }
+function showOverlay() { overlay.classList.remove('hidden'); }
+
+function startPlay() {
+  resetBall();
+  playing = true;
+  won = false;
+  startTime = performance.now();
+  elapsed = 0;
+  hideOverlay();
+  const gyro = device.listening || device.enabled;
+  calBtn.style.display = gyro ? 'block' : 'none';
+  hintEl.style.opacity = '1';
+  hintEl.textContent = gyro
+    ? '倾斜手机控制木盒 · 可点「校准水平」'
+    : '方向键 / WASD 或拖动屏幕来倾斜木盒';
+  hintTimer = 3.2;
+}
+
+function showWin() {
+  cardSub.textContent = '小球到达金色出口';
+  cardStat.hidden = false;
+  cardStat.textContent = '用时 ' + elapsed.toFixed(1) + ' 秒';
+  startBtn.textContent = '再玩一次';
+  nextBtn.hidden = false;
+  nextBtn.textContent = level >= 5 ? '再来一关' : '下一关（更大迷宫）';
+  calBtn.style.display = 'none';
+  showOverlay();
+}
+
+startBtn.addEventListener('click', async () => {
+  const gyro = await enableGyro();
+  if (!playing || won) {
+    if (won) {
+      // replay current level
+    }
+    startPlay();
+  }
+  if (!gyro && !device.enabled && isTouchPhone()) {
+    hintEl.textContent = '未获得陀螺仪权限，可拖动屏幕来倾斜木盒';
+    hintEl.style.opacity = '1';
+    hintTimer = 3.2;
+  }
+});
+
+nextBtn.addEventListener('click', async () => {
+  if (!device.enabled) await enableGyro();
+  buildLevel(level + 1);
+  startPlay();
+});
+
+calBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  calibrate();
+  hintEl.textContent = '已校准：当前姿势为水平';
+  hintEl.style.opacity = '1';
+  hintTimer = 1.8;
+});
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  spaceMat.uniforms.uTime.value = now * 0.001;
+  updateTiltTargets(dt);
+  tilt.x = damp(tilt.x, tilt.tx, 11, dt);
+  tilt.z = damp(tilt.z, tilt.tz, 11, dt);
+  board.rotation.x = tilt.x;
+  board.rotation.z = tilt.z;
+
+  frameCount++;
+  if (playing && !won) {
+    let acc = dt;
+    while (acc > 0) {
+      const s = Math.min(SUB_DT, acc);
+      physicsStep(s);
+      physSteps++;
+      acc -= s;
+    }
+    pos.y = RADIUS;
+    ball.position.copy(pos);
+    elapsed = (now - startTime) / 1000;
+    timeLabel.textContent = elapsed.toFixed(1) + ' 秒';
+    checkWin();
+  }
+
+  if (hintTimer > 0) {
+    hintTimer -= dt;
+    if (hintTimer <= 0) hintEl.style.opacity = '0';
+  }
+
+  renderer.render(scene, camera);
+}
+
+// preview on the start screen: already-built maze, ball at start
+buildLevel(1);
+requestAnimationFrame(frame);
+
+// debug hook for automated tests
+window.__maze = {
+  getState() {
+    return {
+      playing, won, level, cols, rows,
+      ball: { x: pos.x, y: pos.y, z: pos.z },
+      vel: { x: vel.x, z: vel.z },
+      tilt: { x: tilt.x, z: tilt.z },
+      start: { x: startPos.x, z: startPos.z },
+      exit: { x: exitPos.x, z: exitPos.z },
+      walls: wallBoxes.length,
+      elapsed, frameCount, physSteps, keys: { ...keys },
+      maxTilt: MAX_TILT, tiltHold: !!tilt.hold
+    };
+  },
+  startPlay,
+  buildLevel,
+  setTilt(x, z) { tilt.hold = true; tilt.tx = x; tilt.tz = z; keys.n = keys.s = keys.e = keys.w = false; },
+  press(dir, down = true) { tilt.hold = false; if (keys[dir] !== undefined) keys[dir] = down; },
+  penetrating() {
+    const r = RADIUS * 0.92;
+    let n = 0;
+    for (const b of wallBoxes) {
+      const cx = Math.min(Math.max(pos.x, b.minX), b.maxX);
+      const cz = Math.min(Math.max(pos.z, b.minZ), b.maxZ);
+      const dx = pos.x - cx, dz = pos.z - cz;
+      if (dx * dx + dz * dz < r * r) n++;
+    }
+    return n;
+  },
+  inspectScene() {
+    const meshes = [];
+    scene.traverse((o) => {
+      if (!o.isMesh) return;
+      let p = o, inBoard = false;
+      while (p) { if (p === board) { inBoard = true; break; } p = p.parent; }
+      meshes.push({
+        name: o.name || '',
+        geom: o.geometry && o.geometry.type,
+        inBoard,
+        isSpace: o === spaceMesh
+      });
+    });
+    return {
+      meshes,
+      hasSpace: meshes.some((m) => m.isSpace),
+      hasGround: meshes.some((m) => !m.inBoard && !m.isSpace)
+    };
+  },
+  step(seconds) {
+    let t = seconds;
+    const frameDt = 1 / 60;
+    while (t > 0) {
+      const dt = Math.min(frameDt, t);
+      updateTiltTargets(dt);
+      tilt.x = damp(tilt.x, tilt.tx, 11, dt);
+      tilt.z = damp(tilt.z, tilt.tz, 11, dt);
+      board.rotation.x = tilt.x;
+      board.rotation.z = tilt.z;
+      if (playing && !won) {
+        let acc = dt;
+        while (acc > 0) {
+          const s = Math.min(SUB_DT, acc);
+          physicsStep(s);
+          physSteps++;
+          acc -= s;
+        }
+        pos.y = RADIUS;
+        ball.position.copy(pos);
+        elapsed += dt;
+        checkWin();
+      }
+      t -= dt;
+    }
+  }
+};
+</script>
+</body>
+</html>
