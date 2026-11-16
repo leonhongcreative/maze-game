@@ -9,15 +9,27 @@
 <title>木盒迷宫</title>
 <link rel="icon" href="data:,">
 <style>
+  /* UI notes, from a short pass over current references (not a visual clone):
+     Apple HIG / WWDC24 "Design advanced games": one material layer for controls,
+     safe areas, 44×44pt targets, body text ≥17pt and secondary ≥11pt, Reduce Motion
+     replaces movement with fades. HIG Materials: do not stack a material on a material.
+     Partii game UI: HUD is glanceable, kept to the edges, hints fade. Lattice: hairlines
+     and one accent, the board owns the screen. Flomob settings: volume is a slider,
+     on/off is a toggle, and there is always a way back. */
   :root {
     --accent: #e8b060;
-    --accent2: #c4842e;
     --accent-ink: #2a1608;
-    --accent-shadow: #8a5a18;
-    --card-top: rgba(72,42,24,.92);
-    --card-bot: rgba(36,22,12,.94);
-    --text: #f6eadc;
-    --sheet-bg: rgba(22,16,14,.94);
+    --text: #f4efe8;
+    --text-dim: rgba(244, 239, 232, .72);
+    --text-faint: rgba(244, 239, 232, .56);
+    --sheet: rgba(16, 15, 14, .94);
+    --hud: rgba(10, 10, 12, .46);
+    --scrim: rgba(6, 7, 10, .46);
+    --hairline: rgba(255, 255, 255, .16);
+    --pad: 16px;
+    --tap: 44px;
+    --font: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+    --ease: cubic-bezier(.32, .72, 0, 1);
   }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
@@ -27,147 +39,274 @@
     overscroll-behavior: none;
     -webkit-user-select: none; user-select: none;
     -webkit-touch-callout: none;
+    color: var(--text);
+    font-family: var(--font);
   }
   canvas { display: block; touch-action: none; outline: none; width: 100%; height: 100%; }
-  .ui {
-    font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    -webkit-tap-highlight-color: transparent;
-  }
+  .ui { font-family: var(--font); -webkit-tap-highlight-color: transparent; }
+  button, input { font-family: inherit; }
+  [hidden] { display: none !important; }
+
   #hud {
-    position: fixed; left: 0; right: 0; top: 0;
-    display: flex; justify-content: space-between; align-items: flex-start;
-    padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 0;
-    color: var(--text, #f6eadc); pointer-events: none; z-index: 5;
-    text-shadow: 0 1px 8px rgba(0,0,0,.55);
+    position: fixed; left: 0; right: 0; top: 0; z-index: 5;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) var(--pad) 0;
+    pointer-events: none;
+    color: var(--text);
   }
-  #hud .title { font-weight: 650; font-size: 15px; letter-spacing: .06em; }
-  #hud .title small { display: block; font-weight: 400; opacity: .7; font-size: 12px; margin-top: 2px; letter-spacing: .02em; }
-  #hud .hud-right { text-align: right; }
-  #hud .lives { font-size: 14px; font-weight: 600; letter-spacing: .04em; margin-bottom: 3px; }
-  #hud .lives .hearts { letter-spacing: .14em; color: #ff6b7a; }
-  #hud .lives .hearts .off { color: rgba(246,234,220,.28); }
-  #hud .time { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; }
-  #calibrate {
-    position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    z-index: 5; pointer-events: auto;
-    background: var(--sheet-bg, rgba(40,24,14,.55)); color: var(--text, #f6eadc);
-    border: 1px solid rgba(246,234,220,.28); border-radius: 18px;
-    padding: 8px 14px; font-size: 13px; cursor: pointer;
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    display: none;
+  .cluster {
+    background: var(--hud);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+    border-radius: 14px;
+    padding: 8px 12px 9px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
   }
+  .kicker {
+    margin: 0;
+    font-size: 12px; font-weight: 500; line-height: 1.3;
+    color: var(--text-dim);
+  }
+  #levelLabel {
+    margin: 1px 0 0;
+    font-size: 17px; font-weight: 650; line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+  }
+  #legend {
+    display: flex; gap: 10px; align-items: center;
+    margin-top: 6px;
+  }
+  #legend[hidden] { display: none !important; }
+  .key {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; line-height: 1;
+    color: var(--text);
+  }
+  .key i {
+    width: 22px; height: 14px; border-radius: 3px;
+    display: block; box-shadow: inset 0 0 0 1px rgba(255,255,255,.28);
+  }
+  .key.rough i {
+    background-color: rgba(198, 206, 214, .55);
+    background-image:
+      repeating-linear-gradient(45deg, rgba(18, 20, 24, .8) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(-45deg, rgba(18, 20, 24, .8) 0 1px, transparent 1px 4px);
+  }
+  .key.slick i {
+    background-color: rgba(232, 242, 252, .72);
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.95) 0 2px, transparent 2px 6px);
+  }
+  .hud-right { text-align: right; min-width: 92px; }
+  .lives-row {
+    display: flex; justify-content: flex-end; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; color: var(--text-dim); line-height: 1;
+  }
+  .pips { display: inline-flex; gap: 4px; }
+  .pip {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #e25b68;
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,.25);
+  }
+  .pip.off { background: rgba(244, 239, 232, .22); box-shadow: none; }
+  #timeLabel {
+    margin-top: 4px;
+    font-size: 17px; font-weight: 650; line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip {
+    position: fixed; z-index: 6; pointer-events: auto;
+    min-height: var(--tap); min-width: var(--tap);
+    padding: 0 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--hud); color: var(--text);
+    border: 0; border-radius: 14px;
+    font-size: 15px; font-weight: 600; line-height: 1;
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    cursor: pointer;
+  }
+  .chip:active { transform: scale(.98); }
+  #settingsBtn { left: var(--pad); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  #calibrate { right: var(--pad); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: none; }
   #hint {
-    position: fixed; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-    text-align: center; color: rgba(246,234,220,.82); font-size: 13px;
-    text-shadow: 0 1px 6px rgba(0,0,0,.65); pointer-events: none; z-index: 5;
-    padding: 0 108px; transition: opacity .6s;
+    position: fixed; left: 0; right: 0;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    text-align: center; color: var(--text);
+    font-size: 13px; line-height: 1.4; font-weight: 500;
+    text-shadow: 0 1px 2px rgba(0,0,0,.8);
+    pointer-events: none; z-index: 5;
+    padding: 0 88px;
   }
+
   #overlay {
     position: fixed; inset: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(12,8,5,.55);
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    padding: 24px;
+    display: flex; align-items: flex-end; justify-content: center;
+    background: var(--scrim);
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px));
   }
   #overlay.hidden { display: none; }
   .card {
-    width: min(92vw, 380px);
-    background: linear-gradient(180deg, var(--card-top), var(--card-bot));
-    border: 1px solid rgba(246,234,220,.22);
-    border-radius: 20px;
-    padding: 22px 20px 18px;
-    color: var(--text, #f6eadc);
-    text-align: center;
-    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    width: min(100%, 420px);
+    background: var(--sheet);
+    border-radius: 16px;
+    padding: 28px 24px 20px;
+    color: var(--text);
+    text-align: left;
+    box-shadow: 0 18px 50px rgba(0,0,0,.32);
   }
-  .card h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .12em; font-weight: 700; }
-  .card .sub { margin: 0 0 22px; font-size: 14px; line-height: 1.6; opacity: .8; }
-  .card .stat { font-size: 22px; font-weight: 650; margin: 6px 0 20px; font-variant-numeric: tabular-nums; }
+  .card h1 {
+    margin: 0;
+    font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: 0;
+  }
+  .card .sub {
+    margin: 8px 0 0;
+    font-size: 17px; font-weight: 400; line-height: 1.45;
+    color: var(--text-dim);
+  }
+  .card .stat {
+    margin: 16px 0 0;
+    font-size: 22px; font-weight: 650; line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+  }
   .btn {
-    display: block; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; min-height: var(--tap);
+    margin-top: 20px;
     appearance: none; border: 0; cursor: pointer;
-    background: linear-gradient(180deg, var(--accent), var(--accent2));
-    color: var(--accent-ink); font-weight: 700; font-size: 16px;
-    padding: 13px 16px; border-radius: 14px;
-    box-shadow: 0 4px 0 var(--accent-shadow), 0 8px 20px rgba(0,0,0,.28);
+    background: var(--accent); color: var(--accent-ink);
+    font-weight: 700; font-size: 17px; line-height: 1.2;
+    border-radius: 12px;
+    padding: 0 16px;
   }
-  .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--accent-shadow), 0 4px 12px rgba(0,0,0,.28); }
-  [hidden] { display: none !important; }
+  .btn:active { transform: scale(.99); }
   .btn.ghost {
-    margin-top: 10px;
-    background: transparent; color: var(--text, #f6eadc);
-    border: 1px solid rgba(246,234,220,.3);
-    box-shadow: none; font-weight: 600;
+    margin-top: 4px;
+    background: transparent; color: var(--text);
+    font-weight: 600;
   }
+  .btn.ghost:active { background: rgba(255,255,255,.06); }
 
-  #themeBtn {
-    position: fixed; left: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    z-index: 6; pointer-events: auto;
-    background: rgba(16, 14, 20, .82); color: #f4efe8;
-    border: 1px solid rgba(255,255,255,.32); border-radius: 18px;
-    padding: 8px 14px; font-size: 13px; cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0,0,0,.35);
-    text-shadow: 0 1px 2px rgba(0,0,0,.45);
-  }
   #sheetBak {
     position: fixed; inset: 0; z-index: 20;
-    background: rgba(0,0,0,.4); display: none;
+    background: rgba(0,0,0,.4);
+    opacity: 0; pointer-events: none;
   }
-  #sheetBak.open { display: block; }
+  #sheetBak.open { opacity: 1; pointer-events: auto; }
   #sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
-    background: var(--sheet-bg);
-    color: var(--text, #f6eadc);
-    border-radius: 22px 22px 0 0;
-    padding: 10px 18px calc(18px + env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 -12px 40px rgba(0,0,0,.4);
-    transform: translateY(calc(100% + 72px));
-    visibility: hidden;
+    background: var(--sheet);
+    color: var(--text);
+    border-radius: 16px 16px 0 0;
+    padding: 8px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -10px 40px rgba(0,0,0,.28);
+    transform: translateY(105%);
     pointer-events: none;
-    transition: transform .28s ease, visibility 0s linear .28s;
-    max-height: 78vh; overflow-y: auto;
+    max-height: min(78vh, 640px);
+    overflow-y: auto;
   }
   #sheet.open {
     transform: translateY(0);
-    visibility: visible;
     pointer-events: auto;
-    transition: transform .28s ease, visibility 0s;
   }
-  #sheet .handle { width: 40px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.28); margin: 4px auto 10px; }
-  #sheet h3 { margin: 4px 0 10px; font-size: 15px; letter-spacing: .08em; font-weight: 650; display: flex; justify-content: space-between; align-items: center; }
-  #sheet h3 button { appearance: none; background: none; border: 0; color: inherit; font-size: 13px; opacity: .7; cursor: pointer; }
-  .swatch-row { display: flex; justify-content: space-between; gap: 6px; margin: 0 0 14px; }
+  #sheet .handle {
+    width: 36px; height: 5px; border-radius: 3px;
+    background: rgba(255,255,255,.28);
+    margin: 4px auto 8px;
+  }
+  .sheet-head {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: var(--tap);
+    margin: 0 0 4px;
+  }
+  .sheet-head h2 {
+    margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2;
+  }
+  #sheetClose {
+    appearance: none; background: none; border: 0; color: var(--accent);
+    font-size: 17px; font-weight: 600; cursor: pointer;
+    min-height: var(--tap); min-width: var(--tap);
+    padding: 0 4px;
+  }
+  .section {
+    margin: 8px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
+  }
+  .section h3 {
+    margin: 0 0 8px;
+    font-size: 13px; font-weight: 600; line-height: 1.3;
+    color: var(--text-faint);
+  }
+  .swatch-row { display: flex; gap: 4px; margin: 0; }
   .swatch {
     appearance: none; border: 0; background: none; color: inherit;
-    padding: 0; cursor: pointer; flex: 1; text-align: center;
+    flex: 1; min-width: var(--tap); min-height: 64px;
+    padding: 4px 0; cursor: pointer; text-align: center;
   }
   .swatch .dot {
-    display: block; width: 36px; height: 36px; border-radius: 50%;
-    margin: 0 auto 5px; border: 2px solid rgba(255,255,255,.25);
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    display: block; width: 28px; height: 28px; border-radius: 50%;
+    margin: 0 auto 4px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
   }
-  .swatch.on .dot { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0,0,0,.3); }
-  .swatch .sw-lab { display: block; font-size: 11px; opacity: .85; letter-spacing: .04em; }
-  #startExtras { margin: 0 0 14px; }
-  #startExtras .swatch .dot { width: 32px; height: 32px; }
-  .audio-block label, .vol-row span { font-size: 12px; opacity: .8; }
-  .mchip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+  .swatch.on .dot { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); }
+  .swatch .sw-lab { display: block; font-size: 11px; line-height: 1.2; color: var(--text-dim); }
+  .swatch.on .sw-lab { color: var(--text); font-weight: 650; }
+  .mchip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
   .mchip {
     appearance: none; cursor: pointer;
-    background: rgba(255,255,255,.08); color: inherit;
-    border: 1px solid rgba(255,255,255,.16); border-radius: 14px;
-    padding: 5px 10px; font-size: 12px;
+    min-height: var(--tap); padding: 0 14px;
+    background: rgba(255,255,255,.08); color: var(--text);
+    border: 0; border-radius: 12px;
+    font-size: 15px; font-weight: 500;
   }
-  .mchip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 650; }
-  .vol-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
-  .vol-row input[type=range] { flex: 1; accent-color: var(--accent); }
-  .vol-row input[type=checkbox] { accent-color: var(--accent); }
-  #card .sub { margin: 0 0 12px; }
-  @media (max-width: 420px) {
-    #hud .title { font-size: 13px; }
-    #hud .lives { font-size: 13px; }
-    #hud .time { font-size: 16px; }
-    .card h1 { font-size: 22px; }
+  .mchip.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+  .vol-row {
+    display: flex; align-items: center; gap: 12px;
+    min-height: var(--tap);
+    font-size: 15px; font-weight: 500;
+  }
+  .vol-row input[type=range] { flex: 1; min-height: var(--tap); accent-color: var(--accent); }
+  .check {
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: var(--tap); min-width: var(--tap);
+    font-size: 15px; font-weight: 500;
+  }
+  .check input { width: 22px; height: 22px; accent-color: var(--accent); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    #sheet { transition: transform .34s var(--ease); }
+    #sheetBak { transition: opacity .22s ease; }
+    #hint { transition: opacity .35s ease; }
+    .chip:active, .btn:active { transition: transform .12s ease; }
+    .swatch .dot { transition: box-shadow .16s ease; }
+    #overlay .card { animation: cardIn .32s var(--ease); }
+    #levelLabel.tick { animation: levelIn .28s ease; }
+    .pip.just { animation: pipOut .36s ease; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #sheet, #sheetBak, #hint, .card, .pip, #levelLabel, .swatch .dot, .chip, .btn {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes levelIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pipOut {
+    0% { transform: scale(1); }
+    40% { transform: scale(.4); opacity: .4; }
+    100% { transform: none; opacity: 1; }
+  }
+  @media (max-width: 360px) {
+    .card h1 { font-size: 24px; }
+    #levelLabel, #timeLabel { font-size: 16px; }
   }
 </style>
 <script type="importmap">
@@ -179,44 +318,56 @@
 </head>
 <body>
 <div id="hud" class="ui">
-  <div class="title">木盒迷宫<small id="levelLabel">第 1 关 · 难度 1</small></div>
-  <div class="hud-right">
-    <div class="lives" id="livesLabel">生命 <span class="hearts">❤❤❤</span></div>
-    <div class="time" id="timeLabel">0.0 秒</div>
+  <div class="cluster">
+    <p class="kicker">木盒迷宫</p>
+    <p id="levelLabel">第 1 关</p>
+    <div id="legend" hidden>
+      <span class="key rough"><i></i>涩</span>
+      <span class="key slick"><i></i>滑</span>
+    </div>
+  </div>
+  <div class="cluster hud-right">
+    <div class="lives-row">生命 <span class="pips" id="pips" aria-hidden="true"></span></div>
+    <div id="timeLabel">0.0 秒</div>
   </div>
 </div>
-<button class="ui" id="themeBtn">主题 / 声音</button>
-<button class="ui" id="calibrate">校准水平</button>
-<div id="hint" class="ui">倾斜木盒，滚向出口 · 小心外墙开口</div>
+<button class="ui chip" id="settingsBtn" type="button" aria-expanded="false" aria-controls="sheet">设置</button>
+<button class="ui chip" id="calibrate" type="button">校准水平</button>
+<div id="hint" class="ui">倾斜木盒，滚向出口。外墙开口会坠入星空。</div>
 <div id="sheetBak"></div>
-<div id="sheet" class="ui" role="dialog" aria-label="主题与声音">
+<div id="sheet" class="ui" role="dialog" aria-label="设置" aria-modal="true" aria-hidden="true">
   <div class="handle"></div>
-  <h3>主题<button type="button" id="sheetClose">完成</button></h3>
-  <div class="swatch-row" id="sheetSwatches"></div>
-  <h3>声音</h3>
-  <div class="audio-block">
-    <label>音乐</label>
-    <div class="mchip-row" id="musicChips"></div>
-    <div class="vol-row"><span>音乐音量</span><input type="range" id="musicVol" min="0" max="1" step="0.01" value="0.45"></div>
-    <div class="vol-row"><span>音效</span><input type="checkbox" id="sfxOn" checked><span id="sfxOnLab">开</span>
-      <span style="margin-left:auto">音量</span><input type="range" id="sfxVol" min="0" max="1" step="0.01" value="0.7"></div>
+  <div class="sheet-head">
+    <h2>设置</h2>
+    <button type="button" id="sheetClose">完成</button>
   </div>
+  <section class="section">
+    <h3>主题</h3>
+    <div class="swatch-row" id="sheetSwatches"></div>
+  </section>
+  <section class="section">
+    <h3>声音</h3>
+    <div class="mchip-row" id="musicChips"></div>
+    <div class="vol-row"><span>音乐</span><input type="range" id="musicVol" min="0" max="1" step="0.01" value="0.45" aria-label="音乐音量"></div>
+    <label class="check"><input type="checkbox" id="sfxOn" checked>音效 <span id="sfxOnLab">开</span></label>
+    <div class="vol-row"><span>音效</span><input type="range" id="sfxVol" min="0" max="1" step="0.01" value="0.7" aria-label="音效音量"></div>
+  </section>
 </div>
 <div id="overlay" class="ui">
   <div class="card" id="card">
     <h1 id="cardTitle">木盒迷宫</h1>
-    <p class="sub" id="cardSub">倾斜木盒，让金属小球滚向出口。外墙有开口，掉下去会坠入星空并失去一条生命。每局 3 次机会。<br>可在下方选择主题与背景音乐。</p>
-    <div id="startExtras">
-      <div class="swatch-row" id="startSwatches"></div>
-    </div>
+    <p class="sub" id="cardSub">倾斜木盒，让小球滚进出口。外墙有开口，掉下去会坠入星空。每局 3 条生命。</p>
     <div class="stat" id="cardStat" hidden></div>
-    <button class="btn" id="startBtn">开始游戏 / 启用陀螺仪</button>
-    <button class="btn ghost" id="nextBtn" hidden>下一关（更大迷宫）</button>
+    <button class="btn" id="startBtn" type="button">开始游戏</button>
+    <button class="btn ghost" id="settingsAlt" type="button">主题与声音</button>
+    <button class="btn ghost" id="nextBtn" type="button" hidden>下一关</button>
   </div>
 </div>
 <script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* --------------------------------------------------------------------------
  * 设备倾斜输入适配器
@@ -236,7 +387,7 @@ const degToRad = THREE.MathUtils.degToRad;
 const damp = (c, t, l, dt) => c + (t - c) * (1 - Math.exp(-l * dt));
 
 // ---------- renderer / scene / camera ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -441,6 +592,16 @@ const wallMap  = makeWoodTexture({ c0: [0x8d, 0x56, 0x2c], c1: [0x3e, 0x22, 0x10
 // Liquid-glass floor: samples the same procedural space as the skybox with
 // a slight refraction/magnification, fresnel rim, and a moving specular.
 // No transmission pass — same look on desktop and iPhone.
+const SURF_N = 128;
+const surfData = new Uint8Array(SURF_N * SURF_N * 4);
+const surfTex = new THREE.DataTexture(surfData, SURF_N, SURF_N);
+surfTex.magFilter = THREE.LinearFilter;
+surfTex.minFilter = THREE.LinearFilter;
+surfTex.wrapS = surfTex.wrapT = THREE.ClampToEdgeWrapping;
+surfTex.flipY = false;
+surfTex.colorSpace = THREE.NoColorSpace;
+surfTex.needsUpdate = true;
+
 const glassUniforms = {
   uTime: { value: 0 },
   uLightDir: { value: new THREE.Vector3(0.4, 1.0, 0.25).normalize() },
@@ -454,7 +615,8 @@ const glassUniforms = {
   uRim: { value: new THREE.Vector3(0.80, 0.93, 1.0) },
   uRimCore: { value: new THREE.Vector3(1.0, 0.99, 0.98) },
   uHolePos: { value: new THREE.Vector2(0, 0) },
-  uHoleR: { value: 0.45 }
+  uHoleR: { value: 0.45 },
+  uSurf: { value: surfTex }
 };
 const glassMat = new THREE.ShaderMaterial({
   uniforms: glassUniforms,
@@ -491,6 +653,7 @@ const glassMat = new THREE.ShaderMaterial({
     uniform vec3 uRimCore;
     uniform vec2 uHolePos;
     uniform float uHoleR;
+    uniform sampler2D uSurf;
     varying vec3 vWorldPos;
     varying vec3 vWorldNormal;
     varying vec3 vLocalPos;
@@ -564,6 +727,31 @@ const glassMat = new THREE.ShaderMaterial({
       float nh = max(dot(N, H), 0.0);
       col += vec3(1.0, 0.99, 0.97) * pow(nh, 110.0) * 0.95;
       col += vec3(0.78, 0.90, 1.0) * pow(nh, 14.0) * 0.16;
+
+      // Local corridor patches. Rough is cross-hatched and dull; slick is streaked and sharper.
+      vec2 suv = vec2(vLocalPos.x / (uHalf.x * 2.0) + 0.5, vLocalPos.z / (uHalf.y * 2.0) + 0.5);
+      vec4 surf = texture2D(uSurf, clamp(suv, 0.0, 1.0));
+      float roughW = surf.r;
+      float slickW = surf.g;
+      if (roughW + slickW > 0.004) {
+        vec2 fp = vLocalPos.xz;
+        float h1 = abs(fract((fp.x + fp.y) * 26.0) - 0.5);
+        float h2 = abs(fract((fp.x - fp.y) * 26.0) - 0.5);
+        float hatch = smoothstep(0.20, 0.33, min(h1, h2));
+        float grit = fract(sin(dot(floor(fp * 54.0), vec2(127.1, 311.7))) * 43758.5);
+        vec3 roughCol = col * mix(vec3(0.58, 0.62, 0.68), vec3(0.94, 0.95, 0.97), hatch);
+        roughCol *= mix(0.84, 1.0, grit);
+        float across = mix(fp.x, fp.y, surf.b);
+        float lane = abs(fract(across * 5.5) - 0.5);
+        float streak = smoothstep(0.28, 0.42, lane);
+        float groove = 1.0 - smoothstep(0.08, 0.2, lane);
+        float glide = pow(nh, 48.0);
+        vec3 slickCol = col * vec3(1.05, 1.08, 1.14) + vec3(0.55, 0.7, 0.9) * glide * 0.45;
+        slickCol += vec3(0.95, 0.98, 1.0) * streak * 0.55;
+        slickCol *= mix(1.0, 0.72, groove);
+        col = mix(col, roughCol, clamp(roughW, 0.0, 1.0));
+        col = mix(col, slickCol, clamp(slickW, 0.0, 1.0));
+      }
 
       gl_FragColor = vec4(col, 1.0);
     }
@@ -765,10 +953,117 @@ const pearlWallMat = new THREE.MeshPhysicalMaterial({
   clearcoat: 0.9, clearcoatRoughness: 0.1, iridescence: 1,
   iridescenceIOR: 1.3, iridescenceThicknessRange: [140, 420], envMapIntensity: 1.15
 });
-const jadeWallMat = new THREE.MeshPhysicalMaterial({
-  map: jadeMap, color: 0xffffff, roughness: 0.26, metalness: 0.06,
-  clearcoat: 0.55, clearcoatRoughness: 0.22, emissive: 0x07281a,
-  emissiveIntensity: 0.12, envMapIntensity: 0.75
+// Polished jade approximation for phones. Thickness is a ray-box path (Beer-Lambert),
+// not a transmission framebuffer. Caustics are analytic sine interference, not rays.
+const jadeUniforms = {
+  uTime: { value: 0 },
+  uLightDir: glassUniforms.uLightDir,
+  uMap: { value: jadeMap },
+  uInvModel: { value: new THREE.Matrix4() }
+};
+const jadeWallMat = new THREE.ShaderMaterial({
+  uniforms: jadeUniforms,
+  transparent: false,
+  depthWrite: true,
+  toneMapped: true,
+  fog: false,
+  vertexShader: `
+    attribute vec3 aCenter;
+    attribute vec3 aSize;
+    uniform mat4 uInvModel;
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    varying vec3 vBox;
+    varying vec3 vCam;
+    varying vec3 vHalf;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      vNormal = normalize(mat3(modelMatrix) * normal);
+      vBox = position - aCenter;
+      vHalf = max(aSize * 0.5, vec3(0.02));
+      vec3 camObj = (uInvModel * vec4(cameraPosition, 1.0)).xyz;
+      vCam = camObj - aCenter;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform float uTime;
+    uniform vec3 uLightDir;
+    uniform sampler2D uMap;
+    uniform mat4 uInvModel;
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    varying vec3 vBox;
+    varying vec3 vCam;
+    varying vec3 vHalf;
+    ${SPACE_GLSL}
+    float raySpan(vec3 ro, vec3 rd, vec3 h) {
+      float sx = rd.x < 0.0 ? -1.0 : 1.0;
+      float sy = rd.y < 0.0 ? -1.0 : 1.0;
+      float sz = rd.z < 0.0 ? -1.0 : 1.0;
+      vec3 invD = vec3(sx / max(abs(rd.x), 1e-5), sy / max(abs(rd.y), 1e-5), sz / max(abs(rd.z), 1e-5));
+      vec3 t0 = (-h - ro) * invD;
+      vec3 t1 = ( h - ro) * invD;
+      vec3 tsm = min(t0, t1);
+      vec3 tbg = max(t0, t1);
+      float tEnter = max(max(tsm.x, tsm.y), tsm.z);
+      float tExit = min(min(tbg.x, tbg.y), tbg.z);
+      return clamp(tExit - max(tEnter, 0.0), 0.025, 2.4);
+    }
+    void main() {
+      vec3 N = normalize(vNormal);
+      vec3 V = normalize(cameraPosition - vWorldPos);
+      if (dot(N, V) < 0.0) N = -N;
+      vec3 L = normalize(uLightDir);
+      vec3 rd = normalize(vBox - vCam);
+      float path = raySpan(vCam, rd, vHalf);
+      float cloud = texture2D(uMap, vBox.xz * 1.35 + 0.5).g;
+      float vein = texture2D(uMap, vBox.xy * 0.85 + vec2(0.2, 0.6)).r;
+      vec3 sigma = vec3(16.0, 6.4, 11.5) * mix(0.72, 1.45, cloud) * mix(0.88, 1.35, vein);
+      vec3 trans = exp(-sigma * path);
+      float thin = clamp(trans.g, 0.0, 1.0);
+
+      float ndl = dot(N, L);
+      float wrap = clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
+      float back = clamp(-ndl, 0.0, 1.0);
+      vec3 deep = vec3(0.008, 0.055, 0.022);
+      vec3 body = vec3(0.03, 0.20, 0.07);
+      vec3 jade = mix(deep, body, clamp(pow(thin, 0.8), 0.0, 1.0));
+      jade += vec3(0.04, 0.10, 0.025) * wrap * (0.35 + 0.65 * thin);
+      jade += vec3(0.10, 0.22, 0.05) * trans * back * 0.45;
+      float sss = pow(clamp(dot(normalize(V), -L) * 0.5 + 0.5, 0.0, 1.0), 1.6);
+      jade += vec3(0.05, 0.14, 0.03) * sss * thin * 0.35;
+
+      vec3 refr = refract(-V, N, 1.0 / 1.62);
+      if (dot(refr, refr) < 1e-5) refr = reflect(-V, N);
+      vec3 env = spaceColor(refr, uTime);
+      float see = clamp(thin * 0.28, 0.0, 0.18);
+      jade = mix(jade, env * vec3(0.25, 0.55, 0.32) + jade, see);
+
+      vec3 H = normalize(L + V);
+      float spec = pow(max(dot(N, H), 0.0), 180.0);
+      float specW = pow(max(dot(N, H), 0.0), 24.0);
+      float face = smoothstep(0.08, 0.45, max(dot(N, V), 0.0));
+      jade += vec3(0.85, 0.95, 0.7) * spec * 0.22 * (0.35 + 0.65 * face);
+      jade += vec3(0.28, 0.48, 0.22) * specW * 0.04;
+
+      // Simulated caustics: analytic moving interference, stronger where the stone transmits.
+      // This is not a ray-traced light transport pass.
+      float c1 = sin(vBox.x * 18.0 + vBox.y * 11.0 + uTime * 1.25);
+      float c2 = sin(vBox.z * 16.0 - vBox.y * 9.0 - uTime * 0.95 + 1.4);
+      float c3 = sin((vBox.x + vBox.z) * 12.0 + vBox.y * 7.0 + uTime * 0.45);
+      float cau = pow(clamp(0.55 + 0.45 * c1 * c2 + 0.25 * c3, 0.0, 1.0), 3.2);
+      jade += vec3(0.12, 0.28, 0.06) * cau * thin * face * (0.45 + 0.55 * wrap);
+
+      float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+      jade += vec3(0.25, 0.42, 0.22) * fres * 0.08;
+      float foot = smoothstep(0.02, vHalf.y, vBox.y + vHalf.y);
+      jade *= mix(0.78, 1.0, foot);
+      gl_FragColor = vec4(jade, 1.0);
+    }
+  `
 });
 
 const glassWallUniforms = {
@@ -883,7 +1178,7 @@ const THEMES = {
 };
 const THEME_ORDER = ['wood', 'marble', 'titanium', 'glass', 'pearl', 'jade'];
 let currentThemeId = 'wood';
-let wallInst = null;
+let wallMesh = null;
 let themeExitLight = null;
 let themeExitRing = null;
 let holeLight = null;
@@ -891,13 +1186,20 @@ const spawn = { active: false, t: 0, dur: 0.85 };
 
 function getTheme() { return THEMES[currentThemeId] || THEMES.wood; }
 
+function hexToDim(hex, a) {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 function applyTheme(id, persist = true) {
   if (!THEMES[id]) return;
   currentThemeId = id;
   const t = THEMES[id];
-  if (wallInst) {
-    wallInst.material = t.wallMat;
-    wallInst.material.needsUpdate = true;
+  if (wallMesh) {
+    wallMesh.material = t.wallMat;
+    wallMesh.material.needsUpdate = true;
   }
   const F = t.floor;
   glassUniforms.uTint.value.set(F.tint[0], F.tint[1], F.tint[2]);
@@ -959,13 +1261,11 @@ function applyTheme(id, persist = true) {
   const u = t.ui;
   const r = document.documentElement;
   r.style.setProperty('--accent', u.accent);
-  r.style.setProperty('--accent2', u.accent2);
   r.style.setProperty('--accent-ink', u.ink);
-  r.style.setProperty('--accent-shadow', u.shadow);
-  r.style.setProperty('--card-top', u.cardTop);
-  r.style.setProperty('--card-bot', u.cardBot);
   r.style.setProperty('--text', u.text);
-  r.style.setProperty('--sheet-bg', u.sheet);
+  r.style.setProperty('--sheet', u.sheet);
+  r.style.setProperty('--text-dim', hexToDim(u.text, 0.72));
+  r.style.setProperty('--text-faint', hexToDim(u.text, 0.56));
   document.body.dataset.theme = id;
   syncSwatches();
   if (persist) {
@@ -1392,18 +1692,25 @@ function syncAudioUI() {
 }
 
 function openSheet() {
-  document.getElementById('sheet').classList.add('open');
+  const sheet = document.getElementById('sheet');
+  sheet.classList.add('open');
+  sheet.setAttribute('aria-hidden', 'false');
   document.getElementById('sheetBak').classList.add('open');
+  document.getElementById('settingsBtn').setAttribute('aria-expanded', 'true');
+  document.getElementById('hint').style.visibility = 'hidden';
 }
 function closeSheet() {
-  document.getElementById('sheet').classList.remove('open');
+  const sheet = document.getElementById('sheet');
+  sheet.classList.remove('open');
+  sheet.setAttribute('aria-hidden', 'true');
   document.getElementById('sheetBak').classList.remove('open');
+  document.getElementById('settingsBtn').setAttribute('aria-expanded', 'false');
+  document.getElementById('hint').style.visibility = '';
 }
 
 function initThemeAudioUI() {
   loadTheme();
   loadAudioSettings();
-  fillSwatchRow(document.getElementById('startSwatches'), true);
   fillSwatchRow(document.getElementById('sheetSwatches'), true);
   const chips = document.getElementById('musicChips');
   chips.innerHTML = MUSIC_OPTS.map((o) => `<button type="button" class="mchip" data-music="${o.id}">${o.label}</button>`).join('');
@@ -1416,9 +1723,10 @@ function initThemeAudioUI() {
   document.getElementById('musicVol').addEventListener('input', (e) => { unlockAudio(); setMusicVol(+e.target.value); });
   document.getElementById('sfxVol').addEventListener('input', (e) => { unlockAudio(); setSfxVol(+e.target.value); });
   document.getElementById('sfxOn').addEventListener('change', (e) => { unlockAudio(); playClick(); setSfxOn(e.target.checked); });
-  document.getElementById('themeBtn').addEventListener('click', (e) => { e.stopPropagation(); unlockAudio(); playClick(); openSheet(); });
+  document.getElementById('settingsBtn').addEventListener('click', (e) => { e.stopPropagation(); unlockAudio(); playClick(); openSheet(); });
+  document.getElementById('settingsAlt').addEventListener('click', (e) => { e.stopPropagation(); unlockAudio(); playClick(); openSheet(); });
   document.getElementById('sheetBak').addEventListener('click', closeSheet);
-  document.getElementById('sheetClose').addEventListener('click', (e) => { e.stopPropagation(); playClick(); closeSheet(); });
+  document.getElementById('sheetClose').addEventListener('click', (e) => { e.stopPropagation(); unlockAudio(); playClick(); closeSheet(); });
   syncAudioUI();
   applyTheme(currentThemeId, false);
 }
@@ -1464,6 +1772,8 @@ const RADIUS = 0.13;
 const MAX_LIVES = 3;
 const G = 19;
 const FRICTION = 1.15;
+const FILLET = 0.034;
+const SURF_BLEND = 0.10;
 const RESTITUTION = 0.32;
 const MAX_SPEED = 6.2;
 const SUB_DT = 1 / 120;
@@ -1473,7 +1783,12 @@ const TILT_SENS = 0.85;
 
 let level = 1;
 let cols = 7, rows = 7;
-let wallBoxes = []; // {minX,maxX,minZ,maxZ}
+let wallBoxes = []; // {minX,maxX,minZ,maxZ,rf}
+let wallsEnabled = true;
+let patches = [];
+let surfacePlanNow = { count: 0, rough: FRICTION, slick: FRICTION, maxLen: 0, cover: 0 };
+let livesShown = MAX_LIVES;
+const roundCache = new Map();
 let gaps = []; // {side:'n'|'s'|'e'|'w', min, max}
 let startPos = new THREE.Vector3();
 let exitPos = new THREE.Vector3();
@@ -1543,8 +1858,114 @@ function cellCenter(i, j) {
   return new THREE.Vector3(i * CELL - ox, RADIUS, j * CELL - oz);
 }
 
-function addBox(minX, maxX, minZ, maxZ) {
-  wallBoxes.push({ minX, maxX, minZ, maxZ });
+function addBox(minX, maxX, minZ, maxZ, rf) {
+  wallBoxes.push({ minX, maxX, minZ, maxZ, rf });
+}
+
+function filletFor(sx, sz) {
+  return Math.min(FILLET, sx * 0.5 * 0.9, sz * 0.5 * 0.9, WALL_H * 0.5 * 0.9);
+}
+
+function roundedProto(sx, sy, sz, rf) {
+  const key = [sx.toFixed(3), sy.toFixed(3), sz.toFixed(3), rf.toFixed(3)].join('|');
+  let g = roundCache.get(key);
+  if (!g) {
+    g = new RoundedBoxGeometry(Math.max(sx, 0.02), Math.max(sy, 0.02), Math.max(sz, 0.02), 2, Math.max(rf, 0.001));
+    roundCache.set(key, g);
+  }
+  return g;
+}
+
+function mergeRuns(list, axis) {
+  const groups = new Map();
+  for (const s of list) {
+    const fixed = axis === 'x' ? s.z : s.x;
+    const key = fixed.toFixed(3);
+    if (!groups.has(key)) groups.set(key, []);
+    const a = axis === 'x' ? s.x - s.sx / 2 : s.z - s.sz / 2;
+    const b = axis === 'x' ? s.x + s.sx / 2 : s.z + s.sz / 2;
+    groups.get(key).push({ a, b, fixed, thick: axis === 'x' ? s.sz : s.sx });
+  }
+  const out = [];
+  for (const runs of groups.values()) {
+    runs.sort((p, q) => p.a - q.a);
+    let cur = { ...runs[0] };
+    for (let i = 1; i < runs.length; i++) {
+      const n = runs[i];
+      if (n.a <= cur.b + 0.035) cur.b = Math.max(cur.b, n.b);
+      else { out.push(cur); cur = { ...n }; }
+    }
+    out.push(cur);
+  }
+  return out.map((r) => (
+    axis === 'x'
+      ? { x: (r.a + r.b) / 2, z: r.fixed, sx: r.b - r.a, sz: r.thick, axis }
+      : { x: r.fixed, z: (r.a + r.b) / 2, sx: r.thick, sz: r.b - r.a, axis }
+  ));
+}
+
+function extendJoints(walls) {
+  const horiz = walls.filter((w) => w.axis === 'x');
+  const vert = walls.filter((w) => w.axis === 'z');
+  const reach = WALL_T * 0.8;
+  for (const h of horiz) {
+    let a = h.x - h.sx / 2, b = h.x + h.sx / 2;
+    const z0 = h.z - h.sz / 2, z1 = h.z + h.sz / 2;
+    for (const v of vert) {
+      const overlap = Math.min(z1, v.z + v.sz / 2) - Math.max(z0, v.z - v.sz / 2);
+      if (overlap < h.sz * 0.45) continue;
+      if (Math.abs(a - v.x) <= reach) a = Math.min(a, v.x - v.sx / 2);
+      if (Math.abs(b - v.x) <= reach) b = Math.max(b, v.x + v.sx / 2);
+    }
+    h.x = (a + b) / 2;
+    h.sx = Math.max(0.02, b - a);
+  }
+  for (const v of vert) {
+    let a = v.z - v.sz / 2, b = v.z + v.sz / 2;
+    const x0 = v.x - v.sx / 2, x1 = v.x + v.sx / 2;
+    for (const h of horiz) {
+      const overlap = Math.min(x1, h.x + h.sx / 2) - Math.max(x0, h.x - h.sx / 2);
+      if (overlap < v.sx * 0.45) continue;
+      if (Math.abs(a - h.z) <= reach) a = Math.min(a, h.z - h.sz / 2);
+      if (Math.abs(b - h.z) <= reach) b = Math.max(b, h.z + h.sz / 2);
+    }
+    v.z = (a + b) / 2;
+    v.sz = Math.max(0.02, b - a);
+  }
+  return walls;
+}
+
+function buildWallMesh(specs) {
+  const parts = [];
+  for (const s of specs) {
+    if (s.sx < 0.02 || s.sz < 0.02) continue;
+    const rf = filletFor(s.sx, s.sz);
+    addBox(s.x - s.sx / 2, s.x + s.sx / 2, s.z - s.sz / 2, s.z + s.sz / 2, rf);
+    const g = roundedProto(s.sx, WALL_H, s.sz, rf).clone();
+    g.translate(s.x, WALL_H * 0.5, s.z);
+    const count = g.attributes.position.count;
+    const centers = new Float32Array(count * 3);
+    const sizes = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      centers[i * 3] = s.x;
+      centers[i * 3 + 1] = WALL_H * 0.5;
+      centers[i * 3 + 2] = s.z;
+      sizes[i * 3] = s.sx;
+      sizes[i * 3 + 1] = WALL_H;
+      sizes[i * 3 + 2] = s.sz;
+    }
+    g.setAttribute('aCenter', new THREE.BufferAttribute(centers, 3));
+    g.setAttribute('aSize', new THREE.BufferAttribute(sizes, 3));
+    parts.push(g);
+  }
+  if (!parts.length) return;
+  const merged = parts.length === 1 ? parts[0] : mergeGeometries(parts, false);
+  if (parts.length > 1) parts.forEach((g) => g.dispose());
+  wallMesh = new THREE.Mesh(merged, getTheme().wallMat);
+  wallMesh.name = 'walls';
+  wallMesh.castShadow = true;
+  wallMesh.receiveShadow = true;
+  mazeRoot.add(wallMesh);
 }
 
 // ---------- build / rebuild maze ----------
@@ -1557,6 +1978,7 @@ function clearMaze() {
   }
   wallBoxes = [];
   gaps = [];
+  wallMesh = null;
   mazeRoot = new THREE.Group();
   board.add(mazeRoot);
 }
@@ -1583,18 +2005,16 @@ function buildLevel(lv) {
 
   planGaps(ox, oz, hw, hd);
 
-  // walls as instanced boxes (outer boundary uses the same style, with gaps punched out)
   const wallSpecs = [];
   const seen = new Set();
   function wallKey(x, z, sx, sz) {
     return [x.toFixed(3), z.toFixed(3), sx.toFixed(3), sz.toFixed(3)].join('|');
   }
-  function addWall(x, z, sx, sz) {
+  function addWall(x, z, sx, sz, axis) {
     const k = wallKey(x, z, sx, sz);
     if (seen.has(k)) return;
     seen.add(k);
-    wallSpecs.push({ x, z, sx, sz });
-    addBox(x - sx * 0.5, x + sx * 0.5, z - sz * 0.5, z + sz * 0.5);
+    wallSpecs.push({ x, z, sx, sz, axis });
   }
   function subtractIntervals(intervals, gmin, gmax) {
     const out = [];
@@ -1606,7 +2026,8 @@ function buildLevel(lv) {
     return out;
   }
   function addMaybeGappedWall(x, z, sx, sz, side) {
-    if (!side) { addWall(x, z, sx, sz); return; }
+    const axis = (sz < sx) ? 'x' : 'z';
+    if (!side) { addWall(x, z, sx, sz, axis); return; }
     const alongX = (side === 'n' || side === 's');
     let intervals = alongX
       ? [{ a: x - sx * 0.5, b: x + sx * 0.5 }]
@@ -1618,8 +2039,8 @@ function buildLevel(lv) {
       const len = it.b - it.a;
       if (len < 0.025) continue;
       const mid = (it.a + it.b) * 0.5;
-      if (alongX) addWall(mid, z, len, WALL_T);
-      else addWall(x, mid, WALL_T, len);
+      if (alongX) addWall(mid, z, len, WALL_T, 'x');
+      else addWall(x, mid, WALL_T, len, 'z');
     }
   }
 
@@ -1636,19 +2057,8 @@ function buildLevel(lv) {
     }
   }
 
-  const wallGeom = new THREE.BoxGeometry(1, WALL_H, 1);
-  wallInst = new THREE.InstancedMesh(wallGeom, getTheme().wallMat, wallSpecs.length);
-  wallInst.castShadow = true;
-  wallInst.receiveShadow = true;
-  const dummy = new THREE.Object3D();
-  wallSpecs.forEach((s, i) => {
-    dummy.position.set(s.x, WALL_H * 0.5, s.z);
-    dummy.scale.set(s.sx, 1, s.sz);
-    dummy.updateMatrix();
-    wallInst.setMatrixAt(i, dummy.matrix);
-  });
-  wallInst.instanceMatrix.needsUpdate = true;
-  mazeRoot.add(wallInst);
+  const mergedWalls = extendJoints(mergeRuns(wallSpecs.filter((s) => s.axis === 'x'), 'x').concat(mergeRuns(wallSpecs.filter((s) => s.axis === 'z'), 'z')));
+  buildWallMesh(mergedWalls);
 
   startPos.copy(cellCenter(0, 0));
   exitPos.copy(cellCenter(cols - 1, rows - 1));
@@ -1707,12 +2117,204 @@ function buildLevel(lv) {
     contactShadow.name = 'contactShadow';
     board.add(contactShadow);
   }
+  buildSurfaces(cells);
   resetBall();
   fitCamera();
   updateShadowCamera(boardW);
   updateLevelLabel();
   updateLivesHUD();
   applyTheme(currentThemeId, false);
+}
+
+function surfacePlan(lv) {
+  if (lv <= 1) return { count: 0, rough: FRICTION, slick: FRICTION, maxLen: 0, cover: 0 };
+  const n = lv - 1;
+  const dim = sizeForLevel(lv);
+  const cover = Math.min(0.07 + (lv - 2) * 0.04, 0.36);
+  const maxLen = lv >= 7 ? 3 : 2;
+  const avg = maxLen === 3 ? 2.2 : 1.6;
+  let count = Math.round(cover * dim * dim / avg);
+  count = Math.max(2, Math.min(16, count));
+  const drive = G * Math.sin(MAX_TILT);
+  const rough = Math.min(2.1 + (n - 1) * 0.34, drive * 0.78);
+  const slick = Math.max(0.08, 0.58 - (n - 1) * 0.05);
+  return { count, rough, slick, maxLen, cover };
+}
+
+function smooth01(t) {
+  t = clamp(t, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function patchWeight(x, z, p) {
+  const inside = Math.min(x - p.minX, p.maxX - x, z - p.minZ, p.maxZ - z);
+  if (inside >= SURF_BLEND) return 1;
+  if (inside <= 0) return 0;
+  return smooth01(inside / SURF_BLEND);
+}
+
+function boardMapHalf() {
+  return { hw: (cols * CELL + WALL_T) * 0.5, hd: (rows * CELL + WALL_T) * 0.5 };
+}
+
+function paintSurfaces(clearSafe) {
+  surfData.fill(0);
+  const { hw, hd } = boardMapHalf();
+  const W = hw * 2, D = hd * 2;
+  if (patches.length && W > 0 && D > 0) {
+    for (let iy = 0; iy < SURF_N; iy++) {
+      const z = -hd + (iy + 0.5) / SURF_N * D;
+      for (let ix = 0; ix < SURF_N; ix++) {
+        const x = -hw + (ix + 0.5) / SURF_N * W;
+        let rw = 0, sw = 0, dir = 0, best = 0;
+        for (const p of patches) {
+          const w = patchWeight(x, z, p);
+          if (w <= 0) continue;
+          if (p.kind === 'rough') rw = Math.max(rw, w);
+          else sw = Math.max(sw, w);
+          if (w > best) { best = w; dir = p.axis === 'z' ? 1 : 0; }
+        }
+        const i = (iy * SURF_N + ix) * 4;
+        surfData[i] = (clamp(rw, 0, 1) * 255 + 0.5) | 0;
+        surfData[i + 1] = (clamp(sw, 0, 1) * 255 + 0.5) | 0;
+        surfData[i + 2] = dir ? 255 : 0;
+        surfData[i + 3] = 255;
+      }
+    }
+  }
+  if (clearSafe && patches.length) {
+    clearDisk(startPos.x, startPos.z, CELL * 0.58);
+    clearDisk(exitPos.x, exitPos.z, CELL * 0.58);
+  }
+  surfTex.needsUpdate = true;
+}
+
+function clearDisk(cx, cz, rad) {
+  const { hw, hd } = boardMapHalf();
+  const W = hw * 2, D = hd * 2;
+  const r2 = rad * rad;
+  for (let iy = 0; iy < SURF_N; iy++) {
+    const z = -hd + (iy + 0.5) / SURF_N * D;
+    const dz = z - cz;
+    for (let ix = 0; ix < SURF_N; ix++) {
+      const x = -hw + (ix + 0.5) / SURF_N * W;
+      const dx = x - cx;
+      if (dx * dx + dz * dz <= r2) {
+        const i = (iy * SURF_N + ix) * 4;
+        surfData[i] = 0;
+        surfData[i + 1] = 0;
+      }
+    }
+  }
+}
+
+function sampleSurf(x, z) {
+  const { hw, hd } = boardMapHalf();
+  const u = clamp((x + hw) / (hw * 2), 0, 0.999999);
+  const v = clamp((z + hd) / (hd * 2), 0, 0.999999);
+  const fx = u * SURF_N - 0.5;
+  const fy = v * SURF_N - 0.5;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const at = (ix, iy) => {
+    ix = clamp(ix, 0, SURF_N - 1) | 0;
+    iy = clamp(iy, 0, SURF_N - 1) | 0;
+    const i = (iy * SURF_N + ix) * 4;
+    return [surfData[i] / 255, surfData[i + 1] / 255];
+  };
+  const a = at(x0, y0), b = at(x0 + 1, y0), c = at(x0, y0 + 1), d = at(x0 + 1, y0 + 1);
+  const lerp = (p, q, t) => p + (q - p) * t;
+  return {
+    rough: lerp(lerp(a[0], b[0], tx), lerp(c[0], d[0], tx), ty),
+    slick: lerp(lerp(a[1], b[1], tx), lerp(c[1], d[1], tx), ty)
+  };
+}
+
+function frictionAt(x, z) {
+  if (!patches.length) return FRICTION;
+  const s = sampleSurf(x, z);
+  const sum = s.rough + s.slick;
+  const k = clamp(sum, 0, 1);
+  if (k < 1e-4) return FRICTION;
+  const mix = (s.rough * surfacePlanNow.rough + s.slick * surfacePlanNow.slick) / sum;
+  return FRICTION * (1 - k) + mix * k;
+}
+
+function buildSurfaces(cells) {
+  const plan = surfacePlan(level);
+  surfacePlanNow = plan;
+  patches = [];
+  wallsEnabled = true;
+  if (!plan.count) {
+    paintSurfaces(false);
+    updateLegend(false);
+    return;
+  }
+  const blocked = new Set();
+  const mark = (i, j) => { if (i >= 0 && j >= 0 && i < cols && j < rows) blocked.add(i + ',' + j); };
+  for (const [i, j] of [[0, 0], [cols - 1, rows - 1]]) {
+    mark(i, j); mark(i + 1, j); mark(i - 1, j); mark(i, j + 1); mark(i, j - 1);
+  }
+  const runs = [];
+  for (let j = 0; j < rows; j++) {
+    let run = [];
+    for (let i = 0; i < cols; i++) {
+      run.push([i, j]);
+      if (!(i + 1 < cols && !cells[j][i].e)) { runs.push({ axis: 'x', cells: run }); run = []; }
+    }
+  }
+  for (let i = 0; i < cols; i++) {
+    let run = [];
+    for (let j = 0; j < rows; j++) {
+      run.push([i, j]);
+      if (!(j + 1 < rows && !cells[j][i].s)) { runs.push({ axis: 'z', cells: run }); run = []; }
+    }
+  }
+  const cands = [];
+  for (const run of runs) {
+    for (let len = 1; len <= plan.maxLen; len++) {
+      for (let s = 0; s + len <= run.cells.length; s++) {
+        const slice = run.cells.slice(s, s + len);
+        if (slice.some(([i, j]) => blocked.has(i + ',' + j))) continue;
+        cands.push({ axis: run.axis, cells: slice });
+      }
+    }
+  }
+  for (let i = cands.length - 1; i > 0; i--) {
+    const k = (Math.random() * (i + 1)) | 0;
+    const tmp = cands[i]; cands[i] = cands[k]; cands[k] = tmp;
+  }
+  cands.sort((a, b) => b.cells.length - a.cells.length);
+  const used = new Set();
+  let toggle = 0;
+  for (const c of cands) {
+    if (patches.length >= plan.count) break;
+    if (c.cells.some(([i, j]) => used.has(i + ',' + j))) continue;
+    const kind = (toggle++ % 2 === 0) ? 'rough' : 'slick';
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [i, j] of c.cells) {
+      used.add(i + ',' + j);
+      const ctr = cellCenter(i, j);
+      const m = CELL * 0.46;
+      minX = Math.min(minX, ctr.x - m);
+      maxX = Math.max(maxX, ctr.x + m);
+      minZ = Math.min(minZ, ctr.z - m);
+      maxZ = Math.max(maxZ, ctr.z + m);
+    }
+    patches.push({
+      minX, maxX, minZ, maxZ, kind, axis: c.axis,
+      mu: kind === 'rough' ? plan.rough : plan.slick
+    });
+  }
+  paintSurfaces(true);
+  updateLegend(patches.length > 0);
+}
+
+function updateLegend(on) {
+  const el = document.getElementById('legend');
+  if (el) el.hidden = !on;
 }
 
 function planGaps(ox, oz, hw, hd) {
@@ -1764,17 +2366,27 @@ function planGaps(ox, oz, hw, hd) {
 
 function updateLevelLabel() {
   const el = document.getElementById('levelLabel');
-  el.textContent = '第 ' + level + ' 关 · 难度 ' + level + ' · 开口 ' + gaps.length;
+  const bits = ['第 ' + level + ' 关', '难度 ' + level];
+  if (gaps.length) bits.push('开口 ' + gaps.length);
+  el.textContent = bits.join(' · ');
+  el.classList.remove('tick');
+  void el.offsetWidth;
+  el.classList.add('tick');
 }
 
 function updateLivesHUD() {
-  const el = document.getElementById('livesLabel');
+  const el = document.getElementById('pips');
   if (!el) return;
-  let hearts = '';
+  const lostAt = lives < livesShown ? lives : -1;
+  el.replaceChildren();
   for (let i = 0; i < MAX_LIVES; i++) {
-    hearts += i < lives ? '❤' : '<span class="off">❤</span>';
+    const pip = document.createElement('span');
+    pip.className = 'pip' + (i < lives ? '' : ' off') + (i === lostAt ? ' just' : '');
+    el.appendChild(pip);
   }
-  el.innerHTML = '生命 <span class="hearts">' + hearts + '</span>';
+  livesShown = lives;
+  const row = el.parentElement;
+  if (row) row.setAttribute('aria-label', '生命 ' + lives + ' / ' + MAX_LIVES);
 }
 
 function updateShadowCamera(boardW) {
@@ -1793,9 +2405,9 @@ function fitCamera() {
   const half = boardW * 0.55;
   const vFit = half / Math.tan(degToRad(camera.fov * 0.5));
   const hFit = half / Math.tan(degToRad(camera.fov * 0.5)) / aspect;
-  const dist = Math.max(vFit, hFit) * 1.05;
-  camera.position.set(0, dist * 0.94, dist * 0.28);
-  camera.lookAt(0, 0, 0.02);
+  const dist = Math.max(vFit, hFit) * 1.14;
+  camera.position.set(0, dist * 0.98, dist * 0.2);
+  camera.lookAt(0, 0, 0);
   camera.near = 0.05;
   camera.far = dist * 5;
   camera.updateProjectionMatrix();
@@ -1824,9 +2436,14 @@ function finishSpawn() {
   }
 }
 
+function motionReduced() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 function startSpawn() {
   spawn.active = true;
   spawn.t = 0;
+  spawn.dur = motionReduced() ? 0.01 : 0.85;
   if (!ball) return;
   if (ball.parent !== board) board.add(ball);
   ball.visible = true;
@@ -1848,7 +2465,7 @@ function updateSpawn(dt) {
   spawn.t += dt;
   const u = Math.min(1, spawn.t / spawn.dur);
   const ease = 1 - Math.pow(1 - u, 3);
-  const swirl = (1 - ease) * Math.PI * 2.4;
+  const swirl = motionReduced() ? 0 : (1 - ease) * Math.PI * 2.4;
   ball.scale.setScalar(Math.max(0.001, ease));
   ball.rotation.y = swirl;
   pos.copy(startPos);
@@ -1882,46 +2499,44 @@ function resetBall(animate = false) {
 }
 
 // ---------- physics ----------
+function pushOut(b, reach, bestImpact) {
+  const minX = b.minX + b.rf, maxX = b.maxX - b.rf;
+  const minZ = b.minZ + b.rf, maxZ = b.maxZ - b.rf;
+  const left = pos.x - minX, right = maxX - pos.x;
+  const top = pos.z - minZ, bot = maxZ - pos.z;
+  const m = Math.min(left, right, top, bot);
+  if (m === left) { pos.x = minX - reach; if (vel.x > 0) { bestImpact = Math.max(bestImpact, vel.x); vel.x = -vel.x * RESTITUTION; } }
+  else if (m === right) { pos.x = maxX + reach; if (vel.x < 0) { bestImpact = Math.max(bestImpact, -vel.x); vel.x = -vel.x * RESTITUTION; } }
+  else if (m === top) { pos.z = minZ - reach; if (vel.z > 0) { bestImpact = Math.max(bestImpact, vel.z); vel.z = -vel.z * RESTITUTION; } }
+  else { pos.z = maxZ + reach; if (vel.z < 0) { bestImpact = Math.max(bestImpact, -vel.z); vel.z = -vel.z * RESTITUTION; } }
+  return bestImpact;
+}
+
 function collideWalls() {
-  const r = RADIUS * 0.98;
+  const rBall = RADIUS * 0.98;
   let bestImpact = 0;
-  for (let n = 0; n < 3; n++) {
+  for (let n = 0; n < 4; n++) {
     let hit = false;
     for (const b of wallBoxes) {
-      const cx = clamp(pos.x, b.minX, b.maxX);
-      const cz = clamp(pos.z, b.minZ, b.maxZ);
-      let dx = pos.x - cx, dz = pos.z - cz;
+      const rf = b.rf || 0;
+      const minX = b.minX + rf, maxX = b.maxX - rf;
+      const minZ = b.minZ + rf, maxZ = b.maxZ - rf;
+      if (maxX - minX < 1e-4 || maxZ - minZ < 1e-4) continue;
+      const reach = rBall + rf;
+      const cx = clamp(pos.x, minX, maxX);
+      const cz = clamp(pos.z, minZ, maxZ);
+      const dx = pos.x - cx, dz = pos.z - cz;
       const d2 = dx * dx + dz * dz;
-      if (d2 >= r * r) {
-        // fully inside a thick wall (rare, after a teleport) — handled below if d2==0 and inside
-        if (pos.x > b.minX && pos.x < b.maxX && pos.z > b.minZ && pos.z < b.maxZ) {
-          const left = pos.x - b.minX, right = b.maxX - pos.x;
-          const top = pos.z - b.minZ, bot = b.maxZ - pos.z;
-          const m = Math.min(left, right, top, bot);
-          if (m === left) { pos.x = b.minX - r; if (vel.x > 0) { bestImpact = Math.max(bestImpact, vel.x); vel.x = -vel.x * RESTITUTION; } }
-          else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) { bestImpact = Math.max(bestImpact, -vel.x); vel.x = -vel.x * RESTITUTION; } }
-          else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) { bestImpact = Math.max(bestImpact, vel.z); vel.z = -vel.z * RESTITUTION; } }
-          else { pos.z = b.maxZ + r; if (vel.z < 0) { bestImpact = Math.max(bestImpact, -vel.z); vel.z = -vel.z * RESTITUTION; } }
-          hit = true;
-        }
-        continue;
-      }
+      if (d2 >= reach * reach) continue;
       if (d2 < 1e-12) {
-        const left = pos.x - b.minX, right = b.maxX - pos.x;
-        const top = pos.z - b.minZ, bot = b.maxZ - pos.z;
-        const m = Math.min(left, right, top, bot);
-        if (m === left) { pos.x = b.minX - r; if (vel.x > 0) { bestImpact = Math.max(bestImpact, vel.x); vel.x = -vel.x * RESTITUTION; } }
-        else if (m === right) { pos.x = b.maxX + r; if (vel.x < 0) { bestImpact = Math.max(bestImpact, -vel.x); vel.x = -vel.x * RESTITUTION; } }
-        else if (m === top) { pos.z = b.minZ - r; if (vel.z > 0) { bestImpact = Math.max(bestImpact, vel.z); vel.z = -vel.z * RESTITUTION; } }
-        else { pos.z = b.maxZ + r; if (vel.z < 0) { bestImpact = Math.max(bestImpact, -vel.z); vel.z = -vel.z * RESTITUTION; } }
+        bestImpact = pushOut(b, reach, bestImpact);
         hit = true;
         continue;
       }
       const d = Math.sqrt(d2);
       const nx = dx / d, nz = dz / d;
-      const pen = r - d;
-      pos.x += nx * pen;
-      pos.z += nz * pen;
+      pos.x += nx * (reach - d);
+      pos.z += nz * (reach - d);
       const vn = vel.x * nx + vel.z * nz;
       if (vn < 0) {
         bestImpact = Math.max(bestImpact, -vn);
@@ -1937,15 +2552,17 @@ function collideWalls() {
 
 function physicsStep(dt) {
   if (fall.active || falling) return;
-  // gravity in board space from current visual tilt
   vel.x += G * Math.sin(tilt.z) * dt;
   vel.z += -G * Math.sin(tilt.x) * dt;
 
+  const mu = frictionAt(pos.x, pos.z);
   const sp = Math.hypot(vel.x, vel.z);
   if (sp > 1e-6) {
-    const ns = Math.max(0, sp - FRICTION * dt);
-    vel.x *= ns / sp;
-    vel.z *= ns / sp;
+    const ns = Math.max(0, sp - mu * dt);
+    const dampK = 0.22 * (mu / FRICTION);
+    const nd = ns * Math.exp(-dampK * dt);
+    vel.x *= nd / sp;
+    vel.z *= nd / sp;
   }
   const sp2 = Math.hypot(vel.x, vel.z);
   if (sp2 > MAX_SPEED) {
@@ -1955,8 +2572,10 @@ function physicsStep(dt) {
 
   pos.x += vel.x * dt;
   pos.z += vel.z * dt;
-  collideWalls();
-  checkFall();
+  if (wallsEnabled) {
+    collideWalls();
+    checkFall();
+  }
 
   const sp3 = Math.hypot(vel.x, vel.z);
   if (sp3 > 1e-5) {
@@ -2030,7 +2649,7 @@ function finishFall() {
     startTime = performance.now();
     elapsed = 0;
     timeLabel.textContent = '0.0 秒';
-    hintEl.textContent = '剩余生命 ' + lives + ' · 从起点再出发';
+    hintEl.textContent = '剩余生命 ' + lives + '。从起点再出发。';
     hintEl.style.opacity = '1';
     hintTimer = 2.2;
   }
@@ -2161,6 +2780,8 @@ const keyMap = {
   ArrowLeft: 'w', KeyA: 'w',
   ArrowRight: 'e', KeyD: 'e'
 };
+addEventListener('pointerdown', () => { unlockAudio(); }, { passive: true });
+
 addEventListener('keydown', (e) => {
   const k = keyMap[e.code];
   if (!k) return;
@@ -2180,7 +2801,7 @@ function pointerPos(e) {
   return { x: e.clientX, y: e.clientY };
 }
 function onPointerDown(e) {
-  if (!playing || e.target.closest('button') || e.target.closest('#overlay')) return;
+  if (!playing || e.target.closest('button, #sheet, #overlay, #sheetBak')) return;
   const p = pointerPos(e);
   drag.active = true;
   drag.sx = p.x; drag.sy = p.y;
@@ -2238,26 +2859,26 @@ function startPlay() {
   elapsed = 0;
   timeLabel.textContent = '0.0 秒';
   hideOverlay();
-  document.getElementById('themeBtn').style.display = 'block';
   updateLivesHUD();
   const gyro = device.listening || device.enabled;
   calBtn.style.display = gyro ? 'block' : 'none';
   hintEl.style.opacity = '1';
+  const surfaceNote = patches.length ? '涩段好刹，滑段会滑。' : '避开外墙开口。';
   hintEl.textContent = gyro
-    ? '倾斜手机，避开开口 · 点「校准水平」'
-    : '方向键 / WASD 或拖动屏幕 · 避开外墙开口';
-  hintTimer = 3.2;
+    ? '倾斜手机。' + surfaceNote
+    : '方向键、WASD 或拖动。' + surfaceNote;
+  hintTimer = 3.4;
 }
 
 function showWin() {
-  document.getElementById('startExtras').hidden = true;
+  document.getElementById('settingsAlt').hidden = true;
   document.getElementById('cardTitle').textContent = '走出迷宫';
-  cardSub.textContent = '小球到达出口';
+  cardSub.textContent = '小球到达出口。';
   cardStat.hidden = false;
   cardStat.textContent = '用时 ' + elapsed.toFixed(1) + ' 秒';
   startBtn.textContent = '再玩一次';
   nextBtn.hidden = false;
-  nextBtn.textContent = level >= 5 ? '再来一关' : '下一关（更大迷宫）';
+  nextBtn.textContent = '下一关';
   calBtn.style.display = 'none';
   showOverlay();
   playWin();
@@ -2266,9 +2887,9 @@ function showWin() {
 function showGameOver() {
   gameOver = true;
   playing = false;
-  document.getElementById('startExtras').hidden = true;
+  document.getElementById('settingsAlt').hidden = true;
   document.getElementById('cardTitle').textContent = '游戏结束';
-  cardSub.textContent = '生命用尽，掉入了无尽星空';
+  cardSub.textContent = '生命用尽，掉入了星空。';
   cardStat.hidden = false;
   cardStat.textContent = '到达第 ' + level + ' 关';
   startBtn.textContent = '重新开始';
@@ -2321,6 +2942,7 @@ function frame(now) {
   spaceMat.uniforms.uTime.value = now * 0.001;
   glassUniforms.uTime.value = spaceMat.uniforms.uTime.value;
   holeUniforms.uTime.value = spaceMat.uniforms.uTime.value;
+  jadeUniforms.uTime.value = spaceMat.uniforms.uTime.value;
   updateTiltTargets(dt);
   tilt.x = damp(tilt.x, tilt.tx, 11, dt);
   tilt.z = damp(tilt.z, tilt.tz, 11, dt);
@@ -2331,6 +2953,8 @@ function frame(now) {
   glassUniforms.uBoardX.value.copy(tmpAxis);
   tmpAxis.set(0, 0, 1).applyQuaternion(board.quaternion);
   glassUniforms.uBoardZ.value.copy(tmpAxis);
+  board.updateMatrixWorld(true);
+  if (wallMesh) jadeUniforms.uInvModel.value.copy(wallMesh.matrixWorld).invert();
 
   frameCount++;
   if (fall.active) {
@@ -2441,15 +3065,123 @@ window.__maze = {
     return { side: g.side, min: g.min, max: g.max, pos: { x: pos.x, z: pos.z } };
   },
   penetrating() {
-    const r = RADIUS * 0.92;
+    const rBall = RADIUS * 0.92;
     let n = 0;
     for (const b of wallBoxes) {
-      const cx = Math.min(Math.max(pos.x, b.minX), b.maxX);
-      const cz = Math.min(Math.max(pos.z, b.minZ), b.maxZ);
+      const rf = b.rf || 0;
+      const minX = b.minX + rf, maxX = b.maxX - rf;
+      const minZ = b.minZ + rf, maxZ = b.maxZ - rf;
+      const reach = rBall + rf;
+      const cx = Math.min(Math.max(pos.x, minX), maxX);
+      const cz = Math.min(Math.max(pos.z, minZ), maxZ);
       const dx = pos.x - cx, dz = pos.z - cz;
-      if (dx * dx + dz * dz < r * r) n++;
+      if (dx * dx + dz * dz < reach * reach - 1e-4) n++;
     }
     return n;
+  },
+  place(x, z, vx = 0, vz = 0) {
+    if (spawn.active) finishSpawn();
+    pos.set(x, RADIUS, z);
+    vel.set(vx, 0, vz);
+    ball.position.copy(pos);
+    if (contactShadow) contactShadow.position.set(x, 0.003, z);
+  },
+  placeNearExit() {
+    if (spawn.active) finishSpawn();
+    pos.set(exitPos.x, RADIUS, exitPos.z);
+    vel.set(0, 0, 0);
+    ball.position.copy(pos);
+  },
+  frictionAt,
+  surfacePlan,
+  getPatches() {
+    return patches.map((p) => ({
+      minX: p.minX, maxX: p.maxX, minZ: p.minZ, maxZ: p.maxZ,
+      kind: p.kind, axis: p.axis, mu: p.mu
+    }));
+  },
+  surfaceSig() {
+    return JSON.stringify({
+      rough: +surfacePlanNow.rough.toFixed(4),
+      slick: +surfacePlanNow.slick.toFixed(4),
+      n: patches.length,
+      p: patches.map((p) => [p.kind, +p.minX.toFixed(3), +p.maxX.toFixed(3), +p.minZ.toFixed(3), +p.maxZ.toFixed(3)])
+    });
+  },
+  defineSurfaces(list, mus = {}) {
+    surfacePlanNow = {
+      count: list.length,
+      rough: mus.rough ?? 3.4,
+      slick: mus.slick ?? 0.2,
+      maxLen: 2,
+      cover: 0
+    };
+    patches = list.map((p) => ({
+      minX: p.minX, maxX: p.maxX, minZ: p.minZ, maxZ: p.maxZ,
+      kind: p.kind, axis: p.axis || 'x',
+      mu: p.kind === 'slick' ? surfacePlanNow.slick : surfacePlanNow.rough
+    }));
+    paintSurfaces(false);
+    updateLegend(patches.length > 0);
+  },
+  setWallsEnabled(on) { wallsEnabled = !!on; },
+  wallMetrics() {
+    if (!wallMesh || !wallBoxes.length) return null;
+    const b = wallBoxes.find((w) => Math.max(w.maxX - w.minX, w.maxZ - w.minZ) > 0.45) || wallBoxes[0];
+    const attr = wallMesh.geometry.attributes.position;
+    const cx = b.maxX, cy = WALL_H, cz = b.maxZ;
+    let nearest = Infinity;
+    for (let v = 0; v < attr.count; v++) {
+      const x = attr.getX(v), y = attr.getY(v), z = attr.getZ(v);
+      if (x < b.minX - 0.02 || x > b.maxX + 0.02 || z < b.minZ - 0.02 || z > b.maxZ + 0.02) continue;
+      const d = Math.hypot(x - cx, y - cy, z - cz);
+      if (d < nearest) nearest = d;
+    }
+    return {
+      walls: wallBoxes.length,
+      verts: attr.count,
+      fillet: b.rf,
+      cornerGap: nearest,
+      geom: wallMesh.geometry.type
+    };
+  },
+  focusCorner() {
+    const b = wallBoxes.find((w) => (w.maxX - w.minX) > 0.5) || wallBoxes[0];
+    const x = b.maxX, z = (b.minZ + b.maxZ) * 0.5;
+    camera.position.set(x + 0.28, WALL_H + 0.22, z + 0.34);
+    camera.lookAt(x - 0.05, WALL_H * 0.62, z);
+    camera.near = 0.01;
+    camera.updateProjectionMatrix();
+  },
+  openSettings: openSheet,
+  closeSettings: closeSheet,
+  audioState() {
+    return {
+      unlocked: audio.unlocked,
+      musicId: audio.musicId,
+      musicVol: audio.musicVol,
+      sfxOn: audio.sfxOn,
+      sfxVol: audio.sfxVol,
+      hasCtx: !!audio.ctx
+    };
+  },
+  render() { renderer.render(scene, camera); },
+  pump(time) {
+    spaceMat.uniforms.uTime.value = time;
+    glassUniforms.uTime.value = time;
+    holeUniforms.uTime.value = time;
+    jadeUniforms.uTime.value = time;
+    board.updateMatrixWorld(true);
+    if (wallMesh) jadeUniforms.uInvModel.value.copy(wallMesh.matrixWorld).invert();
+    renderer.render(scene, camera);
+  },
+  readPixel(nx, ny) {
+    const gl = renderer.getContext();
+    const x = clamp((nx * gl.drawingBufferWidth) | 0, 0, gl.drawingBufferWidth - 1);
+    const y = clamp(((1 - ny) * gl.drawingBufferHeight) | 0, 0, gl.drawingBufferHeight - 1);
+    const buf = new Uint8Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    return [buf[0], buf[1], buf[2], buf[3]];
   },
   inspectScene() {
     const meshes = [];
